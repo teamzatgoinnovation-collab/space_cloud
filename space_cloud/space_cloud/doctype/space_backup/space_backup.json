@@ -82,7 +82,8 @@
    "fieldname": "job",
    "fieldtype": "Link",
    "label": "Deployment Job",
-   "options": "Space Deployment Job"
+   "options": "Space Deployment Job",
+   "ignore_link_validation": 1
   },
   {
    "fieldname": "output",

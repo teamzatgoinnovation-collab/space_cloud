@@ -77,13 +77,15 @@
    "fieldname": "job",
    "fieldtype": "Link",
    "label": "Job",
-   "options": "Space Deployment Job"
+   "options": "Space Deployment Job",
+   "ignore_link_validation": 1
   },
   {
    "fieldname": "rollback_job",
    "fieldtype": "Link",
    "label": "Rollback Job",
-   "options": "Space Deployment Job"
+   "options": "Space Deployment Job",
+   "ignore_link_validation": 1
   },
   {
    "fieldname": "started_at",

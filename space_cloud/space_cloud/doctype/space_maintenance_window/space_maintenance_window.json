@@ -79,7 +79,8 @@
    "fieldtype": "Link",
    "label": "Job",
    "options": "Space Deployment Job",
-   "read_only": 1
+   "read_only": 1,
+   "ignore_link_validation": 1
   }
  ],
  "links": [],

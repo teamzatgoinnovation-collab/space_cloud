@@ -95,7 +95,8 @@
    "fieldname": "parent_job",
    "fieldtype": "Link",
    "label": "Parent Job",
-   "options": "Space Deployment Job"
+   "options": "Space Deployment Job",
+   "ignore_link_validation": 1
   },
   {
    "fieldname": "timeline_section",

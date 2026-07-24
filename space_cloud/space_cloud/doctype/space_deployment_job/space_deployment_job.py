@@ -6,6 +6,11 @@ from frappe.model.document import Document
 
 
 class SpaceDeploymentJob(Document):
+	def on_trash(self):
+		frappe.db.sql("UPDATE `tabSpace Site` SET `job` = NULL WHERE `job` = %s", self.name)
+		frappe.db.sql("UPDATE `tabSpace Backup` SET `job` = NULL WHERE `job` = %s", self.name)
+		frappe.db.sql("UPDATE `tabSpace Deployment Job` SET `parent_job` = NULL WHERE `parent_job` = %s", self.name)
+
 	@frappe.whitelist()
 	def retry(self):
 		from space_cloud.jobs.backup import enqueue_backup, enqueue_restore
