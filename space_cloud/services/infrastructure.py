@@ -7,7 +7,8 @@ import json
 import frappe
 from frappe.utils import add_days, now_datetime, today
 
-from space_cloud.services import bench_client, notifications
+from space_cloud.services import bench_client
+from space.services import notifications
 
 
 def heartbeat_all():
