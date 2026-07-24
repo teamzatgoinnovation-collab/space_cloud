@@ -20,7 +20,8 @@
    "label": "Site",
    "options": "Space Site",
    "reqd": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "ignore_link_validation": 1
   },
   {
    "fieldname": "domain",

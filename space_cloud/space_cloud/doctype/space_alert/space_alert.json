@@ -79,7 +79,8 @@
    "fieldname": "site",
    "fieldtype": "Link",
    "label": "Site",
-   "options": "Space Site"
+   "options": "Space Site",
+   "ignore_link_validation": 1
   },
   {
    "fieldname": "message",

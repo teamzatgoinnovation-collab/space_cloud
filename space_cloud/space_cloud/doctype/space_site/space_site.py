@@ -19,6 +19,25 @@ class SpaceSite(Document):
 			validate_slug(self.site_name)
 			self.domain = build_domain(self.site_name)
 
+	def on_trash(self):
+		doctypes_to_clean = [
+			"Space Deployment Job",
+			"Space Backup",
+			"Space Domain",
+			"Space Alert",
+			"Space Observability Log",
+			"Space Metric Snapshot",
+			"Space Meter Snapshot",
+			"Space Volume",
+			"Space IP Allow List",
+			"Space App Install History",
+			"Space Migration History",
+			"Space Site Migration",
+			"Space Update Queue",
+		]
+		for dt in doctypes_to_clean:
+			frappe.db.delete(dt, {"site": self.name})
+
 	@frappe.whitelist()
 	def create_site(self):
 		from space_cloud.jobs.provision import enqueue_create_site
