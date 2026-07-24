@@ -412,9 +412,39 @@ frappe.pages["space-cloud"].on_page_load = function (wrapper) {
 	});
 
 	page.main.html('<div class="space-cloud-root"></div>');
-	const el = page.main.find(".space-cloud-root")[0];
+	window.space_cloud = window.space_cloud || {};
+	window.space_cloud.vue = window.space_cloud.vue || {};
 
-	const api = (method, args) => space_cloud.vue.call(method, args);
+	const api = (method, args) => {
+		return frappe
+			.call({ method, args: args || {}, freeze: false })
+			.then((r) => {
+				const message = r.message;
+				if (message == null) return null;
+				if (typeof message === "object" && message.ok === false) {
+					throw new Error(message.error || message.message || __("Request failed"));
+				}
+				if (typeof message === "object" && "data" in message) {
+					return message.data;
+				}
+				return message;
+			});
+	};
+
+	function ensureVue() {
+		if (window.Vue && window.Vue.createApp) {
+			return Promise.resolve(window.Vue);
+		}
+		return new Promise((resolve, reject) => {
+			frappe.require("/assets/space_cloud/js/vendor/vue.global.prod.js", () => {
+				if (window.Vue && window.Vue.createApp) {
+					resolve(window.Vue);
+				} else {
+					reject(new Error("Vue 3 runtime failed to load"));
+				}
+			});
+		});
+	}
 
 	const CloudApp = {
 		data() {
@@ -1344,9 +1374,22 @@ frappe.pages["space-cloud"].on_page_load = function (wrapper) {
 		`,
 	};
 
-	space_cloud.vue.mount(el, CloudApp).then((app) => {
-		wrapper.space_cloud_vue_app = app;
-	});
+	ensureVue()
+		.then((Vue) => {
+			const app = Vue.createApp(CloudApp);
+			app.mount(el);
+			wrapper.space_cloud_vue_app = app;
+		})
+		.catch((err) => {
+			console.error("Space Cloud mount error:", err);
+			el.innerHTML = `
+				<div style="padding:40px;text-align:center;background:#121824;color:#f8fafc;border-radius:12px;margin:20px;border:1px solid #1e293b;">
+					<h3 style="color:#ef4444;margin-bottom:8px;">Space Cloud Cockpit Load Error</h3>
+					<p style="color:#94a3b8;font-size:.88rem;margin-bottom:16px;">${err.message || String(err)}</p>
+					<button class="sc-btn sc-btn-primary" onclick="location.reload()">Reload Page</button>
+				</div>
+			`;
+		});
 };
 
 frappe.pages["space-cloud"].on_page_show = function (wrapper) {
