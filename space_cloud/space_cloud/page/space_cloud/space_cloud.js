@@ -77,21 +77,18 @@ frappe.pages["space-cloud"].on_page_load = function (wrapper) {
 }
 .sc-brand-icon {
   width: 44px; height: 44px;
-  background: linear-gradient(135deg, var(--sc-accent), var(--sc-accent2));
-  border-radius: 12px;
+  background: var(--sc-accent);
+  border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 0 20px rgba(124,92,252,.4);
   flex-shrink: 0;
 }
 .sc-brand-icon svg { fill: #fff; }
 .sc-brand-title {
   font-size: 1.7rem;
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--sc-accent) 0%, var(--sc-accent2) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  font-weight: 800;
+  color: #ffffff;
   margin: 0;
+  letter-spacing: -0.01em;
 }
 .sc-brand-sub {
   font-size: .82rem;
@@ -117,11 +114,10 @@ frappe.pages["space-cloud"].on_page_load = function (wrapper) {
 }
 .sc-btn-ghost:hover { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.15); }
 .sc-btn-primary {
-  background: linear-gradient(135deg, var(--sc-accent), var(--sc-accent2));
+  background: var(--sc-accent);
   color: #fff;
-  box-shadow: 0 2px 12px rgba(124,92,252,.35);
 }
-.sc-btn-primary:hover { filter: brightness(1.1); box-shadow: 0 4px 18px rgba(124,92,252,.5); }
+.sc-btn-primary:hover { filter: brightness(1.08); }
 .sc-btn-danger {
   background: rgba(239,68,68,.12);
   color: var(--sc-red);
@@ -193,7 +189,7 @@ frappe.pages["space-cloud"].on_page_load = function (wrapper) {
 .sc-card::before {
   content: '';
   position: absolute; top: 0; left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, var(--sc-accent), var(--sc-accent2));
+  background: var(--sc-accent);
   opacity: 0;
   transition: opacity .2s;
 }
@@ -324,14 +320,13 @@ frappe.pages["space-cloud"].on_page_load = function (wrapper) {
 }
 .sc-progress-bar {
   height: 100%;
-  background: linear-gradient(90deg, var(--sc-accent), var(--sc-accent2));
+  background: var(--sc-accent);
   border-radius: 2px;
   transition: width .5s ease;
 }
 .sc-progress-bar.is-running {
-  animation: sc-progress-shimmer 1.5s infinite;
-  background-size: 200% 100%;
-  background-image: linear-gradient(90deg, var(--sc-accent) 0%, var(--sc-accent2) 40%, #a78bfa 60%, var(--sc-accent) 100%);
+  background: var(--sc-accent);
+  opacity: 0.8;
 }
 @keyframes sc-progress-shimmer { to { background-position: -200% 0; } }
 
