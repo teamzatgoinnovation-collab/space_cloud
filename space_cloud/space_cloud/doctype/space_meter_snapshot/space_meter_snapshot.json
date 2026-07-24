@@ -1,0 +1,162 @@
+{
+ "actions": [],
+ "creation": "2026-07-24 18:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "site",
+  "customer",
+  "period_start",
+  "period_end",
+  "users",
+  "storage_mb",
+  "database_mb",
+  "files_mb",
+  "api_calls",
+  "deployments",
+  "backups",
+  "bandwidth_mb"
+ ],
+ "fields": [
+  {
+   "fieldname": "site",
+   "fieldtype": "Link",
+   "label": "Site",
+   "options": "Space Site",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Space Customer",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "period_start",
+   "fieldtype": "Date",
+   "label": "Period Start",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "period_end",
+   "fieldtype": "Date",
+   "label": "Period End",
+   "reqd": 1
+  },
+  {
+   "fieldname": "users",
+   "fieldtype": "Int",
+   "label": "Users",
+   "default": "0"
+  },
+  {
+   "fieldname": "storage_mb",
+   "fieldtype": "Float",
+   "label": "Storage MB",
+   "default": "0"
+  },
+  {
+   "fieldname": "database_mb",
+   "fieldtype": "Float",
+   "label": "Database MB",
+   "default": "0"
+  },
+  {
+   "fieldname": "files_mb",
+   "fieldtype": "Float",
+   "label": "Files MB",
+   "default": "0"
+  },
+  {
+   "fieldname": "api_calls",
+   "fieldtype": "Int",
+   "label": "API Calls",
+   "default": "0"
+  },
+  {
+   "fieldname": "deployments",
+   "fieldtype": "Int",
+   "label": "Deployments",
+   "default": "0"
+  },
+  {
+   "fieldname": "backups",
+   "fieldtype": "Int",
+   "label": "Backups",
+   "default": "0"
+  },
+  {
+   "fieldname": "bandwidth_mb",
+   "fieldtype": "Float",
+   "label": "Bandwidth MB",
+   "default": "0"
+  }
+ ],
+ "links": [],
+ "modified": "2026-07-24 18:00:00.000000",
+ "module": "Space Cloud",
+ "name": "Space Meter Snapshot",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "delete": 1,
+   "export": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "Space Admin",
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "delete": 1,
+   "export": 1,
+   "report": 1
+  },
+  {
+   "role": "Billing Manager",
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "delete": 0,
+   "export": 1,
+   "report": 1
+  },
+  {
+   "role": "Space Customer",
+   "create": 0,
+   "read": 1,
+   "write": 0,
+   "delete": 0
+  },
+  {
+   "role": "Space Operator",
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "delete": 0,
+   "export": 1,
+   "report": 1
+  },
+  {
+   "role": "Readonly Auditor",
+   "create": 0,
+   "read": 1,
+   "write": 0,
+   "delete": 0,
+   "export": 1,
+   "report": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "autoname": "hash"
+}

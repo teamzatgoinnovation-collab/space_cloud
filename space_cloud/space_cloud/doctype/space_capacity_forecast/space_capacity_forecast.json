@@ -1,0 +1,131 @@
+{
+ "actions": [],
+ "creation": "2026-07-24 20:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "forecast_date",
+  "server",
+  "cluster",
+  "predicted_sites",
+  "predicted_ram_mb",
+  "predicted_disk_mb",
+  "predicted_cpu_percent",
+  "recommendation",
+  "horizon_days"
+ ],
+ "fields": [
+  {
+   "fieldname": "forecast_date",
+   "fieldtype": "Date",
+   "label": "Forecast Date",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "server",
+   "fieldtype": "Link",
+   "label": "Server",
+   "options": "Space Server",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "cluster",
+   "fieldtype": "Link",
+   "label": "Cluster",
+   "options": "Space Cluster"
+  },
+  {
+   "fieldname": "predicted_sites",
+   "fieldtype": "Int",
+   "label": "Predicted Sites",
+   "default": "0"
+  },
+  {
+   "fieldname": "predicted_ram_mb",
+   "fieldtype": "Int",
+   "label": "Predicted RAM (MB)",
+   "default": "0"
+  },
+  {
+   "fieldname": "predicted_disk_mb",
+   "fieldtype": "Int",
+   "label": "Predicted Disk (MB)",
+   "default": "0"
+  },
+  {
+   "fieldname": "predicted_cpu_percent",
+   "fieldtype": "Float",
+   "label": "Predicted CPU %",
+   "default": "0"
+  },
+  {
+   "fieldname": "recommendation",
+   "fieldtype": "Small Text",
+   "label": "Recommendation"
+  },
+  {
+   "fieldname": "horizon_days",
+   "fieldtype": "Int",
+   "label": "Horizon Days",
+   "default": "30"
+  }
+ ],
+ "links": [],
+ "modified": "2026-07-24 20:00:00.000000",
+ "module": "Space Cloud",
+ "name": "Space Capacity Forecast",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "delete": 1,
+   "export": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "Space Admin",
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "delete": 1,
+   "export": 1,
+   "report": 1
+  },
+  {
+   "role": "Space Operator",
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "delete": 0,
+   "export": 1,
+   "report": 1
+  },
+  {
+   "role": "Support Engineer",
+   "create": 0,
+   "read": 1,
+   "write": 1,
+   "delete": 0,
+   "export": 1,
+   "report": 1
+  },
+  {
+   "role": "Readonly Auditor",
+   "create": 0,
+   "read": 1,
+   "write": 0,
+   "delete": 0,
+   "export": 1,
+   "report": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "autoname": "hash"
+}

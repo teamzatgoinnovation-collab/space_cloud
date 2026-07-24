@@ -1,0 +1,9 @@
+include MANIFEST.in
+include *.md
+include *.txt
+recursive-include space_cloud *.json
+recursive-include space_cloud *.js
+recursive-include space_cloud *.py
+recursive-include space_cloud *.css
+recursive-include space_cloud *.html
+recursive-include space_cloud *.svg

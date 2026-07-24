@@ -1,0 +1,129 @@
+{
+ "actions": [],
+ "creation": "2026-07-24 20:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "volume_name",
+  "storage_pool",
+  "site",
+  "server",
+  "size_gb",
+  "used_gb",
+  "status",
+  "mount_path"
+ ],
+ "fields": [
+  {
+   "fieldname": "volume_name",
+   "fieldtype": "Data",
+   "label": "Volume Name",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "storage_pool",
+   "fieldtype": "Link",
+   "label": "Storage Pool",
+   "options": "Space Storage Pool",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "site",
+   "fieldtype": "Link",
+   "label": "Site",
+   "options": "Space Site",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "server",
+   "fieldtype": "Link",
+   "label": "Server",
+   "options": "Space Server"
+  },
+  {
+   "fieldname": "size_gb",
+   "fieldtype": "Float",
+   "label": "Size (GB)",
+   "default": "10"
+  },
+  {
+   "fieldname": "used_gb",
+   "fieldtype": "Float",
+   "label": "Used (GB)",
+   "default": "0"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Attached\nDetached\nSnapshot\nDeleted",
+   "default": "Attached"
+  },
+  {
+   "fieldname": "mount_path",
+   "fieldtype": "Data",
+   "label": "Mount Path"
+  }
+ ],
+ "links": [],
+ "modified": "2026-07-24 20:00:00.000000",
+ "module": "Space Cloud",
+ "name": "Space Volume",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "delete": 1,
+   "export": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "Space Admin",
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "delete": 1,
+   "export": 1,
+   "report": 1
+  },
+  {
+   "role": "Space Operator",
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "delete": 0,
+   "export": 1,
+   "report": 1
+  },
+  {
+   "role": "Support Engineer",
+   "create": 0,
+   "read": 1,
+   "write": 1,
+   "delete": 0,
+   "export": 1,
+   "report": 1
+  },
+  {
+   "role": "Readonly Auditor",
+   "create": 0,
+   "read": 1,
+   "write": 0,
+   "delete": 0,
+   "export": 1,
+   "report": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "autoname": "field:volume_name",
+ "naming_rule": "By fieldname"
+}
