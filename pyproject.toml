@@ -1,6 +1,6 @@
 [project]
 name = "space_cloud"
-version = "0.1.0"
+version = "0.1.1"
 description = "ZatGo Space Cloud — hosting vertical on Space control-plane framework"
 authors = [{ name = "ZatGo Innovation" }]
 requires-python = ">=3.11"

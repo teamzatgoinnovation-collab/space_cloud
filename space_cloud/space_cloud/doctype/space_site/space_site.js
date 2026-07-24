@@ -1,5 +1,8 @@
 frappe.ui.form.on("Space Site", {
 	refresh(frm) {
+		frm.add_custom_button(__("Open in Cloud"), () => {
+			frappe.set_route("space-cloud", { site: frm.doc.name });
+		});
 		frm.add_custom_button(__("Open Site"), () => {
 			if (frm.doc.domain) window.open("https://" + frm.doc.domain, "_blank");
 		});

@@ -1,0 +1,258 @@
+/* Space Cloud Desk — sc-* classes; prefer Desk CSS vars */
+
+.sc-page {
+	max-width: 1180px;
+	margin: 0 auto;
+	padding: 4px 8px 32px;
+}
+
+.sc-brand {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 18px;
+	flex-wrap: wrap;
+}
+
+.sc-brand-title {
+	font-size: 1.4rem;
+	font-weight: 650;
+	letter-spacing: -0.02em;
+	color: var(--heading-color, var(--text-color));
+	margin: 0;
+}
+
+.sc-brand-sub {
+	margin: 4px 0 0;
+	color: var(--text-muted);
+	font-size: 13px;
+	max-width: 40rem;
+	line-height: 1.45;
+}
+
+.sc-tabs {
+	display: flex;
+	gap: 4px;
+	flex-wrap: wrap;
+	margin-bottom: 16px;
+	border-bottom: 1px solid var(--border-color);
+	padding-bottom: 8px;
+}
+
+.sc-tab {
+	appearance: none;
+	background: transparent;
+	border: none;
+	color: var(--text-muted);
+	font-size: 13px;
+	font-weight: 560;
+	padding: 8px 12px;
+	border-radius: 6px;
+	cursor: pointer;
+}
+
+.sc-tab:hover {
+	background: var(--control-bg, var(--bg-color));
+	color: var(--text-color);
+}
+
+.sc-tab.is-active {
+	background: var(--fg-color, #fff);
+	color: var(--text-color);
+	box-shadow: inset 0 0 0 1px var(--border-color);
+}
+
+.sc-cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+	gap: 10px;
+	margin-bottom: 18px;
+}
+
+.sc-card {
+	background: var(--fg-color, #fff);
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	padding: 12px 14px;
+}
+
+.sc-card-label {
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+	color: var(--text-muted);
+	margin: 0 0 6px;
+}
+
+.sc-card-value {
+	font-size: 1.45rem;
+	font-weight: 650;
+	letter-spacing: -0.02em;
+	margin: 0;
+	color: var(--heading-color, var(--text-color));
+}
+
+.sc-panel {
+	background: var(--fg-color, #fff);
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	padding: 12px;
+}
+
+.sc-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	flex-wrap: wrap;
+	margin-bottom: 12px;
+}
+
+.sc-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 10px 8px;
+	border-bottom: 1px solid var(--border-color);
+	cursor: pointer;
+}
+
+.sc-row:last-child {
+	border-bottom: none;
+}
+
+.sc-row:hover {
+	background: var(--control-bg, var(--bg-color));
+}
+
+.sc-row.is-selected {
+	background: var(--control-bg, var(--bg-color));
+}
+
+.sc-row-title {
+	font-weight: 600;
+	color: var(--text-color);
+}
+
+.sc-row-meta {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin-top: 2px;
+}
+
+.sc-row-meta .dot {
+	margin: 0 4px;
+}
+
+.sc-btn-row {
+	display: flex;
+	gap: 6px;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+}
+
+.sc-status {
+	display: inline-block;
+	font-size: 11px;
+	font-weight: 600;
+	padding: 2px 8px;
+	border-radius: 999px;
+	border: 1px solid var(--border-color);
+	margin-left: 8px;
+	vertical-align: middle;
+}
+
+.sc-status-active,
+.sc-status-success,
+.sc-status-healthy {
+	color: var(--green-600, #067647);
+	background: var(--green-50, #ecfdf3);
+	border-color: var(--green-200, #a6f4c5);
+}
+
+.sc-status-failed,
+.sc-status-offline,
+.sc-status-critical {
+	color: var(--red-600, #b42318);
+	background: var(--red-50, #fef3f2);
+	border-color: var(--red-200, #fecdca);
+}
+
+.sc-status-provisioning,
+.sc-status-queued,
+.sc-status-running,
+.sc-status-draft {
+	color: var(--orange-700, #b54708);
+	background: var(--orange-50, #fffaeb);
+	border-color: var(--orange-200, #fedf89);
+}
+
+.sc-status-suspended,
+.sc-status-unknown,
+.sc-status-degraded {
+	color: var(--text-muted);
+	background: var(--control-bg, var(--bg-color));
+}
+
+.sc-empty {
+	padding: 28px 12px;
+	text-align: center;
+	color: var(--text-muted);
+}
+
+.sc-empty-title {
+	font-weight: 600;
+	color: var(--text-color);
+	margin-bottom: 4px;
+}
+
+.sc-progress {
+	height: 6px;
+	border-radius: 999px;
+	background: var(--control-bg, var(--bg-color));
+	overflow: hidden;
+	min-width: 80px;
+	margin-top: 6px;
+}
+
+.sc-progress > span {
+	display: block;
+	height: 100%;
+	background: var(--primary, #2490ef);
+	border-radius: 999px;
+}
+
+.sc-detail {
+	margin-top: 14px;
+	padding: 12px;
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	background: var(--control-bg, var(--bg-color));
+}
+
+.sc-pre {
+	font-family: var(--font-stack-mono, ui-monospace, monospace);
+	font-size: 12px;
+	white-space: pre-wrap;
+	word-break: break-word;
+	max-height: 280px;
+	overflow: auto;
+	margin: 8px 0 0;
+	padding: 10px;
+	background: var(--fg-color, #fff);
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+}
+
+.sc-muted {
+	color: var(--text-muted);
+	font-size: 12px;
+}
+
+.sc-busy {
+	opacity: 0.65;
+	pointer-events: none;
+}

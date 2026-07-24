@@ -6,20 +6,26 @@ app_publisher = "ZatGo Innovation"
 app_description = "ERPNext site hosting, provisioning, and infrastructure on Space"
 app_email = "engineering@zatgo.local"
 app_license = "mit"
-app_version = "0.1.0"
+app_version = "0.1.1"
 
 required_apps = ["space"]
 
 after_install = "space_cloud.install.after_install"
 after_migrate = "space_cloud.install.after_migrate"
 
+app_home = "/app/space-cloud"
 add_to_apps_screen = [
 	{
 		"name": "space_cloud",
 		"title": "Space Cloud",
-		"route": "/app/cloud-manager",
+		"route": app_home,
 	}
 ]
+
+app_include_js = [
+	"/assets/space_cloud/js/space_cloud_vue.js",
+]
+app_include_css = ["/assets/space_cloud/css/space_cloud.css"]
 
 # Register with Space core hooks contract
 space_provider_types = {

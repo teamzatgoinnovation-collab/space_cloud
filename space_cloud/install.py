@@ -332,30 +332,53 @@ def _seed_workspace_links():
 	ws = frappe.get_doc("Workspace", "Cloud Manager")
 	existing = {(l.label, l.type) for l in (ws.links or [])}
 	changed = False
-	# Ensure core hosting links
-	for label, typ, link_to in [
-		("Sites", "Card Break", None),
-		("Space Site", "Link", "Space Site"),
-		("Space Deployment Job", "Link", "Space Deployment Job"),
-		("Space Customer", "Link", "Space Customer"),
-		("Infrastructure", "Card Break", None),
-		("Space Server", "Link", "Space Server"),
-		("Space Provider", "Link", "Space Provider"),
-		("Space Activity Log", "Link", "Space Activity Log"),
-		("Billing", "Card Break", None),
-		("Space Plan", "Link", "Space Plan"),
-		("Space Subscription", "Link", "Space Subscription"),
-		("Space Settings", "Link", "Space Settings"),
-	] + EXTRA_LINKS:
+
+	# Vue workbench first
+	primary = [
+		("Workbench", "Card Break", None, None),
+		("Space Cloud", "Link", "space-cloud", "Page"),
+	]
+	core_links = [
+		("Sites", "Card Break", None, None),
+		("Space Site", "Link", "Space Site", "DocType"),
+		("Space Deployment Job", "Link", "Space Deployment Job", "DocType"),
+		("Space Customer", "Link", "Space Customer", "DocType"),
+		("Infrastructure", "Card Break", None, None),
+		("Space Server", "Link", "Space Server", "DocType"),
+		("Space Provider", "Link", "Space Provider", "DocType"),
+		("Space Activity Log", "Link", "Space Activity Log", "DocType"),
+		("Billing", "Card Break", None, None),
+		("Space Plan", "Link", "Space Plan", "DocType"),
+		("Space Subscription", "Link", "Space Subscription", "DocType"),
+		("Space Settings", "Link", "Space Settings", "DocType"),
+	]
+	for label, typ, link_to, link_type in primary + core_links + [
+		(a[0], a[1], a[2], "DocType" if a[1] == "Link" else None) for a in EXTRA_LINKS
+	]:
 		if (label, typ) in existing:
 			continue
 		row = {"label": label, "type": typ, "hidden": 0, "onboard": 0}
 		if typ == "Link":
-			row.update({"link_type": "DocType", "link_to": link_to})
+			row.update({"link_type": link_type or "DocType", "link_to": link_to})
 		elif typ == "Card Break":
 			row["link_count"] = 0
 		ws.append("links", row)
 		changed = True
+
+	# Shortcuts: prefer Vue page
+	shortcut_labels = {s.label for s in (ws.shortcuts or [])}
+	if "Space Cloud" not in shortcut_labels:
+		ws.append(
+			"shortcuts",
+			{
+				"label": "Space Cloud",
+				"type": "Page",
+				"link_to": "space-cloud",
+				"color": "Blue",
+			},
+		)
+		changed = True
+
 	if changed:
 		ws.flags.ignore_links = True
 		ws.save(ignore_permissions=True)
