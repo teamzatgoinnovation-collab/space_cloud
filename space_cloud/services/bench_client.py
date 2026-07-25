@@ -10,6 +10,7 @@ transport underneath changed.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
@@ -277,6 +278,88 @@ def get_site_disk_mb(server_name: str | None, site: str) -> int:
 		return max(0, int(first))
 	except ValueError:
 		return 0
+
+
+def _du_mb(server_name: str | None, path: str) -> float:
+	"""du -sm a path, tolerating a missing directory (e.g. no backups taken yet)."""
+	r = run_on_bench(server_name, ["bash", "-lc", f"du -sm {path} 2>/dev/null || echo 0"], timeout_s=30)
+	first = (r.get("stdout") or "0").strip().splitlines()[-1].split()[0] if r.get("stdout") else "0"
+	try:
+		return max(0.0, float(first))
+	except ValueError:
+		return 0.0
+
+
+def get_site_storage_breakdown(server_name: str | None, site: str) -> dict[str, float]:
+	site = _assert_site(site)
+	return {
+		"public_files_mb": _du_mb(server_name, f"sites/{site}/public/files"),
+		"private_files_mb": _du_mb(server_name, f"sites/{site}/private/files"),
+		"backup_files_mb": _du_mb(server_name, f"sites/{site}/private/backups"),
+	}
+
+
+def get_site_db_size_mb(server_name: str | None, site: str) -> int:
+	"""Sum InnoDB data+index bytes for the site's own database (its own schema only)."""
+	site = _assert_site(site)
+	query = (
+		"select round(coalesce(sum(data_length+index_length),0)/1024/1024,0) "
+		"from information_schema.tables where table_schema=database()"
+	)
+	r = run_on_bench(
+		server_name,
+		["bench", "--site", site, "execute", "frappe.db.sql", "--kwargs", json.dumps({"query": query})],
+		timeout_s=60,
+	)
+	m = re.search(r"[\d.]+", r.get("stdout") or "")
+	try:
+		return int(float(m.group(0))) if m else 0
+	except ValueError:
+		return 0
+
+
+def get_site_record_counts(server_name: str | None, site: str) -> dict[str, int]:
+	"""User/Company counts from the site's OWN database, via stock frappe.db.count only —
+	customer sites don't have space_cloud installed, so only core APIs are safe to call."""
+	site = _assert_site(site)
+	counts: dict[str, int] = {}
+	for key, doctype in (("user_count", "User"), ("company_count", "Company")):
+		try:
+			r = run_on_bench(
+				server_name,
+				["bench", "--site", site, "execute", "frappe.db.count", "--args", json.dumps([doctype])],
+				timeout_s=60,
+			)
+			m = re.search(r"\d+", (r.get("stdout") or "").strip().splitlines()[-1] if r.get("stdout") else "")
+			counts[key] = int(m.group(0)) if m else 0
+		except Exception:
+			counts[key] = 0
+	return counts
+
+
+SITE_LOG_ALLOWLIST = ("frappe.log", "database.log", "render-template.log", "cssutils.log")
+
+
+def list_site_log_files(server_name: str | None, site: str) -> list[str]:
+	site = _assert_site(site)
+	r = run_on_bench(server_name, ["bash", "-lc", f"ls -1 sites/{site}/logs 2>/dev/null || true"], timeout_s=20)
+	present = set((r.get("stdout") or "").split())
+	return [f for f in SITE_LOG_ALLOWLIST if f in present]
+
+
+def get_site_log_tail(server_name: str | None, site: str, log_file: str, lines: int = 200) -> str:
+	site = _assert_site(site)
+	if log_file not in SITE_LOG_ALLOWLIST:
+		raise BenchError(f"Log file not allowed: {log_file}")
+	n = max(1, min(int(lines or 200), 2000))
+	# log_file is a closed-enum match against SITE_LOG_ALLOWLIST (checked above), site is
+	# validated by _assert_site — neither axis of this path is attacker-influenced, and
+	# "tail" isn't on the Agent's argv[0] allowlist so this goes through "bash" like the
+	# other one-liners in this module (redis-cli, ps aux, etc).
+	r = run_on_bench(
+		server_name, ["bash", "-lc", f"tail -n {n} sites/{site}/logs/{log_file} 2>/dev/null || true"], timeout_s=30
+	)
+	return (r.get("stdout") or "")[:50000]
 
 
 def get_backend_mem(server_name: str | None = None) -> dict[str, Any]:

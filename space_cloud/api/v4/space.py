@@ -11,10 +11,22 @@ from space_cloud.jobs import infrastructure as infra_jobs
 from space.services import audit, rate_limit
 from space_cloud.services import infrastructure, server_pool
 from space_cloud.services import bench_client
+from space_cloud.services import quota as quota_service
 
 
 def _rl():
 	rate_limit.check_rate_limit("v4")
+
+
+def _require_site_access(site: str) -> None:
+	"""Admin/operator roles see any site; a plain Space Customer only their own."""
+	require_roles("Space Admin", "Space Operator", "System Manager", "Support Engineer", "Readonly Auditor", "Space Customer")
+	admin_roles = {"Space Admin", "Space Operator", "System Manager", "Support Engineer", "Readonly Auditor"}
+	if frappe.session.user == "Administrator" or admin_roles.intersection(frappe.get_roles()):
+		return
+	owner = frappe.db.get_value("Space Site", site, "customer")
+	if not owner or owner != customer_for_user():
+		frappe.throw("Not permitted", frappe.PermissionError)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -330,3 +342,61 @@ def heartbeat_now():
 	require_roles("Space Admin", "Space Operator", "System Manager")
 	infrastructure.heartbeat_all()
 	return ok({"ran": True})
+
+
+@frappe.whitelist()
+def site_usage(site: str):
+	_rl()
+	_require_site_access(site)
+	row = frappe.db.get_value(
+		"Space Site",
+		site,
+		[
+			"storage_used_mb",
+			"database_size_mb",
+			"public_files_mb",
+			"private_files_mb",
+			"backup_files_mb",
+			"site_user_count",
+			"site_company_count",
+			"usage_last_scanned_at",
+		],
+		as_dict=True,
+	)
+	if not row:
+		return fail("Site not found", "NOT_FOUND")
+	return ok(row)
+
+
+@frappe.whitelist()
+def site_quota(site: str):
+	_rl()
+	_require_site_access(site)
+	return ok(quota_service.compute_site_quota(site))
+
+
+@frappe.whitelist()
+def fleet_quota_summary():
+	_rl()
+	require_roles("Space Admin", "Space Operator", "System Manager", "Readonly Auditor")
+	return ok(quota_service.compute_fleet_quota_summary())
+
+
+@frappe.whitelist()
+def site_log_files(site: str):
+	_rl()
+	_require_site_access(site)
+	site_doc = frappe.db.get_value("Space Site", site, ["server", "domain"], as_dict=True)
+	if not site_doc or not site_doc.domain:
+		return fail("Site not found", "NOT_FOUND")
+	return ok(bench_client.list_site_log_files(site_doc.server, site_doc.domain))
+
+
+@frappe.whitelist()
+def site_log_tail(site: str, log_file: str, lines: int = 200):
+	_rl()
+	_require_site_access(site)
+	site_doc = frappe.db.get_value("Space Site", site, ["server", "domain"], as_dict=True)
+	if not site_doc or not site_doc.domain:
+		return fail("Site not found", "NOT_FOUND")
+	return ok({"logs": bench_client.get_site_log_tail(site_doc.server, site_doc.domain, log_file, lines=int(lines or 200))})

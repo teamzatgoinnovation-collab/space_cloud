@@ -79,6 +79,7 @@ scheduler_events = {
 		"space_cloud.jobs.backup.cleanup_old_backups",
 		"space_cloud.jobs.backup.enqueue_scheduled_backups",
 		"space_cloud.jobs.monitoring.refresh_all_health",
+		"space_cloud.jobs.monitoring.refresh_site_record_counts",
 		"space_cloud.services.infrastructure.forecast_capacity",
 		"space_cloud.services.infrastructure.auto_heal",
 		"space_cloud.jobs.infrastructure.process_maintenance_windows",

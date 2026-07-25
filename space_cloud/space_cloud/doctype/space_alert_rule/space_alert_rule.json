@@ -12,6 +12,7 @@
   "scope",
   "target_server",
   "target_cluster",
+  "target_site",
   "is_active",
   "cooldown_minutes",
   "notify_roles"
@@ -29,7 +30,7 @@
    "fieldname": "metric",
    "fieldtype": "Select",
    "label": "Metric",
-   "options": "CPU\nDisk\nWorkers\nDB\nRedis\nSSL\nBackup\nDeployment\nHealth\nQueue",
+   "options": "CPU\nDisk\nWorkers\nDB\nRedis\nSSL\nBackup\nDeployment\nHealth\nQueue\nQuota",
    "reqd": 1,
    "in_list_view": 1
   },
@@ -74,6 +75,13 @@
    "fieldtype": "Link",
    "label": "Target Cluster",
    "options": "Space Cluster"
+  },
+  {
+   "fieldname": "target_site",
+   "fieldtype": "Link",
+   "label": "Target Site",
+   "options": "Space Site",
+   "depends_on": "eval:doc.scope==\"Site\""
   },
   {
    "fieldname": "is_active",

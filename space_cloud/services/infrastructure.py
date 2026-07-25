@@ -6,6 +6,7 @@ import frappe
 from frappe.utils import add_days, now_datetime, today
 
 from space_cloud.services import bench_client
+from space_cloud.services import quota as quota_service
 from space.services import notifications
 
 
@@ -91,6 +92,48 @@ def evaluate_alerts():
 	now = now_datetime()
 	for name in frappe.get_all("Space Alert Rule", filters={"is_active": 1}, pluck="name"):
 		rule = frappe.get_doc("Space Alert Rule", name)
+
+		if rule.scope == "Site" and rule.target_site:
+			value = _site_metric_value(rule.target_site, rule.metric)
+			if value is None or not _compare(value, rule.operator or ">", float(rule.threshold or 0)):
+				continue
+			cooldown_recent = frappe.get_all(
+				"Space Alert",
+				filters={
+					"rule": rule.name,
+					"site": rule.target_site,
+					"status": ("in", ["Open", "Acknowledged"]),
+					"modified": (">", add_days(today(), -1)),
+				},
+				limit_page_length=1,
+			)
+			if cooldown_recent:
+				continue
+			alert = frappe.get_doc(
+				{
+					"doctype": "Space Alert",
+					"title": f"{rule.metric} {rule.operator} {rule.threshold} on {rule.target_site}",
+					"rule": rule.name,
+					"severity": rule.severity or "Warning",
+					"status": "Open",
+					"metric": rule.metric,
+					"value": value,
+					"threshold": rule.threshold,
+					"site": rule.target_site,
+					"server": frappe.db.get_value("Space Site", rule.target_site, "server"),
+					"message": f"{rule.metric}={value} crossed {rule.operator}{rule.threshold} on {rule.target_site}",
+					"opened_at": now,
+				}
+			).insert(ignore_permissions=True)
+			notifications.notify(
+				title=alert.title,
+				event_type="generic",
+				message=alert.message,
+				ref_doctype="Space Alert",
+				ref_name=alert.name,
+			)
+			continue
+
 		targets = []
 		if rule.target_server:
 			targets = [rule.target_server]
@@ -143,6 +186,17 @@ def evaluate_alerts():
 				ref_name=alert.name,
 			)
 	frappe.db.commit()
+
+
+def _site_metric_value(site: str, metric: str) -> float | None:
+	m = (metric or "").strip()
+	if m == "Quota":
+		q = quota_service.compute_site_quota(site)
+		percents = [d["percent"] for d in (q["storage"], q["users"], q["companies"]) if d["percent"] is not None]
+		return max(percents) if percents else None
+	if m == "Disk":
+		return quota_service.compute_site_quota(site)["storage"]["percent"]
+	return None
 
 
 def _metric_value(server: str, metric: str) -> float | None:

@@ -59,6 +59,12 @@ def refresh_server_health(server_name: str) -> dict:
 				continue
 			try:
 				site.storage_used_mb = bench_client.get_site_disk_mb(server_name, site.domain)
+				breakdown = bench_client.get_site_storage_breakdown(server_name, site.domain)
+				site.public_files_mb = breakdown["public_files_mb"]
+				site.private_files_mb = breakdown["private_files_mb"]
+				site.backup_files_mb = breakdown["backup_files_mb"]
+				site.database_size_mb = bench_client.get_site_db_size_mb(server_name, site.domain)
+				site.usage_last_scanned_at = now_datetime()
 				site.save(ignore_permissions=True)
 			except Exception:
 				pass
@@ -171,3 +177,23 @@ def metrics_history(server: str | None = None, site: str | None = None, limit: i
 		order_by="captured_at desc",
 		limit_page_length=min(int(limit or 48), 200),
 	)
+
+
+def refresh_site_record_counts():
+	"""Per-site user/company counts — daily, not hourly: these change rarely and
+	each call does a full bench execute (frappe.init+connect), heavier than du."""
+	for site_name in frappe.get_all(
+		"Space Site", filters={"status": ("in", ["Active", "Suspended"])}, fields=["name", "domain", "server"]
+	):
+		if not site_name.domain:
+			continue
+		try:
+			counts = bench_client.get_site_record_counts(site_name.server, site_name.domain)
+			frappe.db.set_value(
+				"Space Site",
+				site_name.name,
+				{"site_user_count": counts["user_count"], "site_company_count": counts["company_count"]},
+				update_modified=False,
+			)
+		except Exception:
+			frappe.log_error(title=f"Space record-count scan failed for {site_name.name}")

@@ -22,7 +22,14 @@
   "usage_section",
   "storage_used_mb",
   "database_size_mb",
+  "public_files_mb",
+  "private_files_mb",
+  "backup_files_mb",
   "last_backup",
+  "usage_counts_column",
+  "site_user_count",
+  "site_company_count",
+  "usage_last_scanned_at",
   "apps_section",
   "installed_apps",
   "admin_password",
@@ -142,9 +149,54 @@
    "read_only": 1
   },
   {
+   "fieldname": "public_files_mb",
+   "fieldtype": "Float",
+   "label": "Public Files (MB)",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "private_files_mb",
+   "fieldtype": "Float",
+   "label": "Private Files (MB)",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "backup_files_mb",
+   "fieldtype": "Float",
+   "label": "Backup Files (MB)",
+   "default": "0",
+   "read_only": 1
+  },
+  {
    "fieldname": "last_backup",
    "fieldtype": "Datetime",
    "label": "Last Backup",
+   "read_only": 1
+  },
+  {
+   "fieldname": "usage_counts_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "site_user_count",
+   "fieldtype": "Int",
+   "label": "User Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "site_company_count",
+   "fieldtype": "Int",
+   "label": "Company Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "usage_last_scanned_at",
+   "fieldtype": "Datetime",
+   "label": "Usage Last Scanned",
    "read_only": 1
   },
   {
