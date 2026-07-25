@@ -46,6 +46,10 @@
   "disk_used_mb",
   "active_sites",
   "last_health_at",
+  "reservations_section",
+  "reservations",
+  "reserved_mb",
+  "storage_pool",
   "ssl_section",
   "ssl_mode",
   "ssl_expires_on",
@@ -228,6 +232,32 @@
    "fieldtype": "Datetime",
    "label": "Last Health Check",
    "read_only": 1
+  },
+  {
+   "fieldname": "reservations_section",
+   "fieldtype": "Section Break",
+   "label": "Reserved Resources"
+  },
+  {
+   "fieldname": "reservations",
+   "fieldtype": "Table",
+   "label": "Reservations",
+   "options": "Space Server Reservation",
+   "description": "Disk carved out for OS, Docker, logs, and future headroom — subtracted from disk_mb when a Hosting Pool is auto-sized for this server."
+  },
+  {
+   "fieldname": "reserved_mb",
+   "fieldtype": "Int",
+   "label": "Reserved (MB)",
+   "read_only": 1,
+   "description": "Sum of the Reservations table, recomputed on save."
+  },
+  {
+   "fieldname": "storage_pool",
+   "fieldtype": "Link",
+   "label": "Storage Pool",
+   "options": "Space Storage Pool",
+   "description": "Hosting Pool this server allocates customer site storage from."
   },
   {
    "fieldname": "ssl_section",

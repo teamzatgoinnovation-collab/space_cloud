@@ -119,6 +119,7 @@ def _seed_all():
 	_seed_alert_rules()
 	_seed_default_cluster()
 	_link_provider_to_server()
+	_seed_hosting_pool()
 	_seed_number_cards()
 	_seed_workspace_links()
 	_ensure_prefer_server()
@@ -172,6 +173,19 @@ def _link_provider_to_server():
 		cfg.setdefault("host", "157.230.8.164")
 		prov.config_json = json.dumps(cfg)
 		prov.save(ignore_permissions=True)
+
+
+def _seed_hosting_pool():
+	if not frappe.db.exists("DocType", "Space Storage Pool"):
+		return
+	from space_cloud.services import hosting_pool
+
+	for server_name in frappe.get_all("Space Server", pluck="name"):
+		try:
+			hosting_pool.ensure_pool_for_server(server_name)
+		except Exception:
+			frappe.log_error(title=f"Space hosting pool seed failed: {server_name}")
+	hosting_pool.recompute_all_pools()
 
 
 def _ensure_prefer_server():

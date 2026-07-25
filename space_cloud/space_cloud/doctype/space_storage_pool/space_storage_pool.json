@@ -6,12 +6,15 @@
  "field_order": [
   "pool_name",
   "title",
+  "server",
   "region",
   "cluster",
   "backend",
   "path_or_bucket",
   "capacity_gb",
+  "allocated_gb",
   "used_gb",
+  "available_gb",
   "status",
   "encrypted"
  ],
@@ -28,6 +31,14 @@
    "fieldname": "title",
    "fieldtype": "Data",
    "label": "Title"
+  },
+  {
+   "fieldname": "server",
+   "fieldtype": "Link",
+   "label": "Server",
+   "options": "Space Server",
+   "in_list_view": 1,
+   "description": "Server this Hosting Pool allocates customer site storage for. Left blank for a future shared/multi-server pool."
   },
   {
    "fieldname": "region",
@@ -58,13 +69,30 @@
    "fieldname": "capacity_gb",
    "fieldtype": "Float",
    "label": "Capacity (GB)",
-   "default": "100"
+   "default": "100",
+   "description": "Admin-configurable allocatable ceiling — independent of the server's total physical disk. Never auto-overwritten once set."
+  },
+  {
+   "fieldname": "allocated_gb",
+   "fieldtype": "Float",
+   "label": "Allocated (GB)",
+   "read_only": 1,
+   "description": "Sum of Space Plan.storage_mb promised to every Active/Provisioning site drawing from this pool. Recomputed hourly."
   },
   {
    "fieldname": "used_gb",
    "fieldtype": "Float",
    "label": "Used (GB)",
-   "default": "0"
+   "default": "0",
+   "read_only": 1,
+   "description": "Actual physical storage in use, rolled up from Space Site.storage_used_mb. Recomputed hourly."
+  },
+  {
+   "fieldname": "available_gb",
+   "fieldtype": "Float",
+   "label": "Available (GB)",
+   "read_only": 1,
+   "description": "capacity_gb - allocated_gb. Recomputed hourly."
   },
   {
    "fieldname": "status",

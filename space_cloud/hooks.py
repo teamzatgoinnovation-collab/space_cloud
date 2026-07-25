@@ -69,6 +69,7 @@ space_api_namespaces = [
 scheduler_events = {
 	"hourly": [
 		"space_cloud.jobs.monitoring.refresh_all_health",
+		"space_cloud.services.hosting_pool.recompute_all_pools",
 		"space_cloud.jobs.marketplace.process_update_queue",
 		"space_cloud.services.infrastructure.heartbeat_all",
 		"space_cloud.services.infrastructure.evaluate_alerts",

@@ -12,6 +12,7 @@ from space.services import audit, rate_limit
 from space_cloud.services import infrastructure, server_pool
 from space_cloud.services import bench_client
 from space_cloud.services import quota as quota_service
+from space_cloud.services import hosting_pool
 
 
 def _rl():
@@ -380,6 +381,29 @@ def fleet_quota_summary():
 	_rl()
 	require_roles("Space Admin", "Space Operator", "System Manager", "Readonly Auditor")
 	return ok(quota_service.compute_fleet_quota_summary())
+
+
+@frappe.whitelist()
+def storage_pool_status(server: str | None = None, cluster: str | None = None):
+	_rl()
+	require_roles("Space Admin", "Space Operator", "System Manager", "Readonly Auditor")
+	return ok(hosting_pool.pool_status(server=server, cluster=cluster))
+
+
+@frappe.whitelist()
+def hosting_pool_summary():
+	_rl()
+	require_roles("Space Admin", "Space Operator", "System Manager", "Readonly Auditor")
+	pools = hosting_pool.pool_status()
+	return ok(
+		{
+			"pools": pools,
+			"total_capacity_gb": round(sum(p.get("capacity_gb") or 0 for p in pools), 2),
+			"total_allocated_gb": round(sum(p.get("allocated_gb") or 0 for p in pools), 2),
+			"total_used_gb": round(sum(p.get("used_gb") or 0 for p in pools), 2),
+			"total_available_gb": round(sum(p.get("available_gb") or 0 for p in pools), 2),
+		}
+	)
 
 
 @frappe.whitelist()

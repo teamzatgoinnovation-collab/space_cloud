@@ -1,1 +1,2 @@
-"""Space Cloud patches — currently empty; data migration lives in space v0_5."""
+# Space Cloud patches — most Phase 1 data migration lives in space v0_5.
+space_cloud.patches.v0_2.seed_hosting_pools

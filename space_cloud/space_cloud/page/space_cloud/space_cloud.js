@@ -457,6 +457,7 @@ frappe.pages["space-cloud"].on_page_load = function (wrapper) {
 				sites: [],
 				jobs: [],
 				servers: [],
+				pools: [],
 				plans: [],
 				subscriptions: [],
 				selectedSite: null,
@@ -554,6 +555,7 @@ frappe.pages["space-cloud"].on_page_load = function (wrapper) {
 						this.loadSites(),
 						this.loadJobs(),
 						this.loadServers(),
+						this.loadPools(),
 						this.loadCatalog(),
 						this.loadSubscriptions(),
 					]);
@@ -598,13 +600,20 @@ frappe.pages["space-cloud"].on_page_load = function (wrapper) {
 						fields: [
 							"name", "title", "status", "health", "ip_address",
 							"active_sites", "cpu_used_percent", "ram_used_mb",
-							"disk_used_mb", "is_default",
+							"disk_used_mb", "disk_mb", "is_default",
 						],
 						order_by: "is_default desc, modified desc",
 						limit_page_length: 50,
 					},
 				});
 				this.servers = r.message || [];
+			},
+			async loadPools() {
+				try {
+					this.pools = (await api("space_cloud.api.v4.space.storage_pool_status")) || [];
+				} catch (e) {
+					this.pools = [];
+				}
 			},
 			async loadCatalog() {
 				try {
@@ -1128,6 +1137,10 @@ frappe.pages["space-cloud"].on_page_load = function (wrapper) {
             <div class="sc-metric" v-if="row.ram_used_mb">
               RAM {{ Math.round((row.ram_used_mb||0)/1024*10)/10 }} GB
             </div>
+            <div class="sc-metric" v-if="row.disk_mb">
+              Disk {{ Math.round((row.disk_used_mb||0)/1024*10)/10 }} / {{ Math.round((row.disk_mb||0)/1024*10)/10 }} GB
+              <div class="sc-metric-bar"><span :class="metricBarClass(100*(row.disk_used_mb||0)/Math.max(row.disk_mb||1,1))" :style="{width: Math.min(100*(row.disk_used_mb||0)/Math.max(row.disk_mb||1,1),100)+'%'}"></span></div>
+            </div>
             <div class="sc-metric">
               {{ row.active_sites || 0 }} sites
             </div>
@@ -1140,6 +1153,44 @@ frappe.pages["space-cloud"].on_page_load = function (wrapper) {
           <button class="sc-btn sc-btn-ghost sc-btn-xs" @click="openDoc('Space Server', row.name)">{{ __("Open") }}</button>
           <button class="sc-btn sc-btn-ghost sc-btn-xs" @click="serverAction(row.name, 'test_connection')">{{ __("Test") }}</button>
           <button class="sc-btn sc-btn-ghost sc-btn-xs" @click="serverAction(row.name, 'refresh_statistics')">{{ __("Stats") }}</button>
+        </div>
+      </div>
+
+      <!-- ── Hosting Pools ── -->
+      <div class="sc-toolbar" style="margin-top:24px">
+        <span class="sc-panel-title">{{ __("Hosting Pools") }}</span>
+        <span class="sc-panel-count">{{ pools.length }}</span>
+      </div>
+
+      <div v-if="!pools.length" class="sc-empty">
+        <p>{{ __("No hosting pool configured yet — run Refresh, or migrate to backfill from existing servers.") }}</p>
+      </div>
+
+      <div class="sc-row" v-for="p in pools" :key="p.name">
+        <div class="sc-row-body">
+          <div class="sc-row-header">
+            <span class="sc-row-title">{{ p.title || p.pool_name }}</span>
+            <span :class="statusClass(p.status)">{{ p.status }}</span>
+            <span v-if="p.server" style="font-size:.72rem;color:var(--sc-muted)">{{ p.server }}</span>
+          </div>
+          <div class="sc-metrics">
+            <div class="sc-metric">
+              {{ __("Allocated") }} {{ p.allocated_gb || 0 }} / {{ p.capacity_gb || 0 }} GB
+              <div class="sc-metric-bar"><span :class="metricBarClass(100*(p.allocated_gb||0)/Math.max(p.capacity_gb||1,1))" :style="{width: Math.min(100*(p.allocated_gb||0)/Math.max(p.capacity_gb||1,1),100)+'%'}"></span></div>
+            </div>
+            <div class="sc-metric">
+              {{ __("Used (actual)") }} {{ p.used_gb || 0 }} GB
+            </div>
+            <div class="sc-metric">
+              {{ __("Available") }} {{ p.available_gb ?? "—" }} GB
+            </div>
+            <div class="sc-metric" v-if="p.reserved_gb">
+              {{ __("Reserved") }} {{ p.reserved_gb }} GB {{ __("of") }} {{ p.disk_gb }} GB {{ __("disk") }}
+            </div>
+          </div>
+        </div>
+        <div class="sc-btn-row" @click.stop>
+          <button class="sc-btn sc-btn-ghost sc-btn-xs" @click="openDoc('Space Storage Pool', p.name)">{{ __("Open") }}</button>
         </div>
       </div>
     </div>

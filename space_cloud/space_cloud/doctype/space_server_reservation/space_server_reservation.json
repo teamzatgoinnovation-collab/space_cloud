@@ -1,0 +1,42 @@
+{
+ "actions": [],
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "reservation_type",
+  "size_mb",
+  "notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "reservation_type",
+   "fieldtype": "Select",
+   "label": "Type",
+   "options": "OS\nDocker\nLogs\nFuture\nCustom",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "size_mb",
+   "fieldtype": "Int",
+   "label": "Size (MB)",
+   "reqd": 1,
+   "non_negative": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-25 00:00:00.000000",
+ "module": "Space Cloud",
+ "name": "Space Server Reservation",
+ "permissions": [],
+ "states": []
+}

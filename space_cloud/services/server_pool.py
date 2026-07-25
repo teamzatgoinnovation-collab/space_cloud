@@ -65,6 +65,7 @@ def select_server_advanced(
 		"io_wait_percent",
 		"load_avg",
 		"status",
+		"storage_pool",
 	]
 	# only request columns that exist (pre-migrate safety)
 	safe_fields = [f for f in fields if f in ("name", "active_sites", "max_sites", "ram_mb", "ram_used_mb", "disk_mb", "disk_used_mb", "weight", "health", "cpu_cores", "cpu_used_percent", "status") or frappe.db.has_column("Space Server", f)]
@@ -100,6 +101,19 @@ def select_server_advanced(
 		plan_ram = int(frappe.db.get_value("Space Plan", plan, "ram_mb") or 0)
 		plan_disk = int(frappe.db.get_value("Space Plan", plan, "storage_mb") or 0)
 
+	pool_available_mb = {}
+	if plan_disk and frappe.db.has_column("Space Server", "storage_pool"):
+		pool_names = frappe.get_all(
+			"Space Server", filters={"storage_pool": ("is", "set")}, pluck="storage_pool", distinct=True
+		)
+		if pool_names:
+			for p in frappe.get_all(
+				"Space Storage Pool",
+				filters={"name": ("in", pool_names)},
+				fields=["name", "available_gb", "status"],
+			):
+				pool_available_mb[p.name] = (p.available_gb or 0) * 1024 if p.status != "Offline" else 0
+
 	def has_plan_headroom(c):
 		ram_free = (c.get("ram_mb") or 0) - (c.get("ram_used_mb") or 0) if isinstance(c, dict) else (c.ram_mb or 0) - (c.ram_used_mb or 0)
 		disk_free = (c.get("disk_mb") or 0) - (c.get("disk_used_mb") or 0) if isinstance(c, dict) else (c.disk_mb or 0) - (c.disk_used_mb or 0)
@@ -107,6 +121,10 @@ def select_server_advanced(
 			return False
 		if plan_disk and disk_free < plan_disk * 0.5:
 			return False
+		pool = c.get("storage_pool") if isinstance(c, dict) else getattr(c, "storage_pool", None)
+		if plan_disk and pool and pool in pool_available_mb:
+			if pool_available_mb[pool] < plan_disk:
+				return False
 		return True
 
 	with_plan = [c for c in eligible if has_plan_headroom(c)]

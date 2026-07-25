@@ -6,6 +6,9 @@ from frappe.model.document import Document
 
 
 class SpaceServer(Document):
+	def validate(self):
+		self.reserved_mb = sum(int(r.size_mb or 0) for r in (self.reservations or []))
+
 	@frappe.whitelist()
 	def test_connection(self):
 		from space_cloud.services.bench_client import test_server_connection
