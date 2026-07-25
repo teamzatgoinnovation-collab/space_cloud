@@ -13,6 +13,7 @@ from space_cloud.services import infrastructure, server_pool
 from space_cloud.services import bench_client
 from space_cloud.services import quota as quota_service
 from space_cloud.services import hosting_pool
+from space_cloud.jobs import bench_manager
 
 
 def _rl():
@@ -404,6 +405,59 @@ def hosting_pool_summary():
 			"total_available_gb": round(sum(p.get("available_gb") or 0 for p in pools), 2),
 		}
 	)
+
+
+@frappe.whitelist()
+def bench_list_apps(server: str):
+	_rl()
+	require_roles("Space Admin", "Space Operator", "System Manager", "Readonly Auditor")
+	return ok(bench_manager.list_bench_apps(server))
+
+
+@frappe.whitelist()
+def bench_list_site_apps(site: str):
+	_rl()
+	_require_site_access(site)
+	return ok(bench_manager.list_site_apps(site))
+
+
+@frappe.whitelist()
+def bench_get_app(server: str, repo: str, branch: str = "main", app_name: str | None = None):
+	"""bench get-app <repo> — fetches a new app onto the shared bench. Affects
+	every site on this server; Space Admin / System Manager only."""
+	_rl()
+	require_roles("Space Admin", "System Manager")
+	job = bench_manager.enqueue_get_app(server, repo, branch=branch, app_name=app_name)
+	return ok({"job": job})
+
+
+@frappe.whitelist()
+def bench_restart(server: str):
+	_rl()
+	require_roles("Space Admin", "System Manager")
+	job = bench_manager.enqueue_restart_bench(server)
+	return ok({"job": job})
+
+
+@frappe.whitelist()
+def bench_install_app(site: str, app_package: str, repo: str | None = None, branch: str = "main"):
+	_rl()
+	require_roles("Space Admin", "System Manager")
+	return ok(bench_manager.enqueue_install_app(site, app_package, repo=repo, branch=branch))
+
+
+@frappe.whitelist()
+def bench_uninstall_app(site: str, app_package: str):
+	_rl()
+	require_roles("Space Admin", "System Manager")
+	return ok(bench_manager.enqueue_uninstall_app(site, app_package))
+
+
+@frappe.whitelist()
+def bench_migrate_site(site: str):
+	_rl()
+	require_roles("Space Admin", "Space Operator", "System Manager")
+	return ok(bench_manager.enqueue_migrate_site(site))
 
 
 @frappe.whitelist()

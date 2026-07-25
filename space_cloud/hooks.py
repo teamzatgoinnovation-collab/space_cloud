@@ -41,6 +41,8 @@ space_job_handlers = {
 	"suspend_site": "space_cloud.jobs.lifecycle.run_suspend_site",
 	"resume_site": "space_cloud.jobs.lifecycle.run_resume_site",
 	"delete_site": "space_cloud.jobs.lifecycle.run_delete_site",
+	"bench_get_app": "space_cloud.jobs.bench_manager.run_bench_get_app",
+	"bench_restart": "space_cloud.jobs.bench_manager.run_bench_restart",
 }
 
 # Modules the space.api.v{1..4}.space.* backward-compat surfaces delegate

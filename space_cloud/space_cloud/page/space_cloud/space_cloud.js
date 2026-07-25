@@ -458,6 +458,8 @@ frappe.pages["space-cloud"].on_page_load = function (wrapper) {
 				jobs: [],
 				servers: [],
 				pools: [],
+				benchForm: { server: "", repo: "", branch: "main" },
+				benchApps: [],
 				plans: [],
 				subscriptions: [],
 				selectedSite: null,
@@ -794,6 +796,110 @@ frappe.pages["space-cloud"].on_page_load = function (wrapper) {
 				}
 			},
 
+			/* ── Bench Manager ── */
+			async runGetApp() {
+				if (!this.benchForm.server || !this.benchForm.repo) return;
+				this.busy = true;
+				try {
+					const res = await api("space_cloud.api.v4.space.bench_get_app", {
+						server: this.benchForm.server,
+						repo: this.benchForm.repo,
+						branch: this.benchForm.branch || "main",
+					});
+					frappe.show_alert({ message: __("get-app queued: {0}", [res?.job || "ok"]), indicator: "green" });
+				} catch (e) {
+					frappe.show_alert({ message: e.message || String(e), indicator: "red" });
+				} finally {
+					this.busy = false;
+				}
+			},
+			async loadBenchApps() {
+				if (!this.benchForm.server) return;
+				this.busy = true;
+				try {
+					this.benchApps = (await api("space_cloud.api.v4.space.bench_list_apps", { server: this.benchForm.server })) || [];
+				} catch (e) {
+					this.benchApps = [];
+					frappe.show_alert({ message: e.message || String(e), indicator: "red" });
+				} finally {
+					this.busy = false;
+				}
+			},
+			async restartBench() {
+				if (!this.benchForm.server) return;
+				this.busy = true;
+				try {
+					const res = await api("space_cloud.api.v4.space.bench_restart", { server: this.benchForm.server });
+					frappe.show_alert({ message: __("bench restart queued: {0}", [res?.job || "ok"]), indicator: "green" });
+				} catch (e) {
+					frappe.show_alert({ message: e.message || String(e), indicator: "red" });
+				} finally {
+					this.busy = false;
+				}
+			},
+			promptInstallApp(siteName) {
+				frappe.prompt(
+					[
+						{ fieldname: "app_package", label: __("App Package"), fieldtype: "Data", reqd: 1 },
+						{ fieldname: "repo", label: __("Repository URL (optional — skip if already on bench)"), fieldtype: "Data" },
+						{ fieldname: "branch", label: __("Branch"), fieldtype: "Data", default: "main" },
+					],
+					async (values) => {
+						this.busy = true;
+						try {
+							const res = await api("space_cloud.api.v4.space.bench_install_app", {
+								site: siteName,
+								app_package: values.app_package,
+								repo: values.repo || null,
+								branch: values.branch || "main",
+							});
+							frappe.show_alert({ message: __("Install queued: {0}", [res?.job || "ok"]), indicator: "green" });
+							if (res?.job) { this.tab = "deployments"; await this.openJob(res.job); }
+						} catch (e) {
+							frappe.show_alert({ message: e.message || String(e), indicator: "red" });
+						} finally {
+							this.busy = false;
+						}
+					},
+					__("Install App on {0}", [siteName]),
+					__("Install")
+				);
+			},
+			promptUninstallApp(siteName) {
+				frappe.prompt(
+					[{ fieldname: "app_package", label: __("App Package"), fieldtype: "Data", reqd: 1 }],
+					async (values) => {
+						this.busy = true;
+						try {
+							const res = await api("space_cloud.api.v4.space.bench_uninstall_app", {
+								site: siteName,
+								app_package: values.app_package,
+							});
+							frappe.show_alert({ message: __("Uninstall queued: {0}", [res?.job || "ok"]), indicator: "green" });
+							if (res?.job) { this.tab = "deployments"; await this.openJob(res.job); }
+						} catch (e) {
+							frappe.show_alert({ message: e.message || String(e), indicator: "red" });
+						} finally {
+							this.busy = false;
+						}
+					},
+					__("Uninstall App from {0}", [siteName]),
+					__("Uninstall")
+				);
+			},
+			async runMigrateSite(siteName) {
+				this.busy = true;
+				try {
+					const res = await api("space_cloud.api.v4.space.bench_migrate_site", { site: siteName });
+					frappe.show_alert({ message: __("Migrate queued: {0}", [res?.job || "ok"]), indicator: "green" });
+					if (res?.job) { this.tab = "deployments"; await this.openJob(res.job); }
+				} catch (e) {
+					frappe.show_alert({ message: e.message || String(e), indicator: "red" });
+				} finally {
+					this.busy = false;
+				}
+			},
+
 			/* ── Quick Delete Confirmation Modal ── */
 			openDeleteModal(siteName) {
 				this.siteToDelete = siteName;
@@ -931,6 +1037,10 @@ frappe.pages["space-cloud"].on_page_load = function (wrapper) {
     <button class="sc-tab" :class="{'is-active': tab==='billing'}" @click="setTab('billing')">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
       {{ __("Plans & Billing") }}
+    </button>
+    <button class="sc-tab" :class="{'is-active': tab==='bench'}" @click="setTab('bench')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+      {{ __("Bench Manager") }}
     </button>
   </div>
 
@@ -1191,6 +1301,60 @@ frappe.pages["space-cloud"].on_page_load = function (wrapper) {
         </div>
         <div class="sc-btn-row" @click.stop>
           <button class="sc-btn sc-btn-ghost sc-btn-xs" @click="openDoc('Space Storage Pool', p.name)">{{ __("Open") }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ BENCH MANAGER ══════ -->
+    <div v-if="tab==='bench'" class="sc-panel">
+      <div class="sc-toolbar">
+        <span class="sc-panel-title">{{ __("Fetch App from Git (bench get-app)") }}</span>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;padding:4px 20px 18px;">
+        <div class="sc-form-group" style="margin:0">
+          <label class="sc-form-label">{{ __("Server") }}</label>
+          <select class="sc-select" v-model="benchForm.server">
+            <option value="" disabled>{{ __("Select server") }}</option>
+            <option v-for="s in servers" :key="s.name" :value="s.name">{{ s.title || s.name }}</option>
+          </select>
+        </div>
+        <div class="sc-form-group" style="margin:0;min-width:280px;flex:1">
+          <label class="sc-form-label">{{ __("Repository URL") }}</label>
+          <input type="text" class="sc-input" v-model="benchForm.repo" placeholder="https://github.com/org/app.git" />
+        </div>
+        <div class="sc-form-group" style="margin:0;width:140px">
+          <label class="sc-form-label">{{ __("Branch") }}</label>
+          <input type="text" class="sc-input" v-model="benchForm.branch" placeholder="main" />
+        </div>
+        <button class="sc-btn sc-btn-primary sc-btn-sm" :disabled="!benchForm.server || !benchForm.repo" @click="runGetApp">{{ __("Run get-app") }}</button>
+        <button class="sc-btn sc-btn-ghost sc-btn-sm" :disabled="!benchForm.server" @click="loadBenchApps">{{ __("List Bench Apps") }}</button>
+        <button class="sc-btn sc-btn-ghost sc-btn-sm" :disabled="!benchForm.server" @click="restartBench">{{ __("Restart Bench") }}</button>
+      </div>
+      <div v-if="benchApps.length" style="padding:0 20px 20px;display:flex;gap:8px;flex-wrap:wrap;">
+        <span v-for="a in benchApps" :key="a" style="font-size:.78rem;padding:3px 10px;border-radius:14px;background:var(--sc-surface2);color:var(--sc-text)">{{ a }}</span>
+      </div>
+
+      <div class="sc-toolbar" style="margin-top:8px">
+        <span class="sc-panel-title">{{ __("Site App Actions") }}</span>
+        <span class="sc-panel-count">{{ sites.length }}</span>
+      </div>
+      <div v-if="!sites.length" class="sc-empty">
+        <p>{{ __("No sites yet.") }}</p>
+      </div>
+      <div class="sc-row" v-for="row in sites" :key="row.name">
+        <div class="sc-row-body">
+          <div class="sc-row-header">
+            <span class="sc-row-title">{{ row.domain || row.site_name || row.name }}</span>
+            <span :class="statusClass(row.status)">{{ row.status }}</span>
+          </div>
+          <div class="sc-row-meta">
+            <span>{{ row.server || "Default Server" }}</span>
+          </div>
+        </div>
+        <div class="sc-btn-row" @click.stop>
+          <button class="sc-btn sc-btn-ghost sc-btn-xs" @click="promptInstallApp(row.name)">{{ __("Install App") }}</button>
+          <button class="sc-btn sc-btn-ghost sc-btn-xs" @click="promptUninstallApp(row.name)">{{ __("Uninstall App") }}</button>
+          <button class="sc-btn sc-btn-ghost sc-btn-xs" @click="runMigrateSite(row.name)">{{ __("Migrate") }}</button>
         </div>
       </div>
     </div>
