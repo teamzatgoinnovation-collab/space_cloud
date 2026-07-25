@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 import frappe
 from frappe.utils import add_days, now_datetime, today
 
@@ -18,30 +16,15 @@ def heartbeat_all():
 		try:
 			stats = bench_client.get_backend_stats(name)
 			updates = {"last_heartbeat": now, "health": "Healthy" if stats.get("redis_ok") else "Degraded"}
-			if frappe.db.has_column("Space Server", "cpu_used_percent") and stats.get("cpu_percent") is not None:
-				updates["cpu_used_percent"] = stats.get("cpu_percent")
-			if stats.get("ram_used_mb") is not None:
-				updates["ram_used_mb"] = stats.get("ram_used_mb")
 			if stats.get("disk_used_mb") is not None:
 				updates["disk_used_mb"] = stats.get("disk_used_mb")
 			if frappe.db.has_column("Space Server", "load_avg") and stats.get("load_avg") is not None:
 				updates["load_avg"] = stats.get("load_avg")
 			frappe.db.set_value("Space Server", name, updates, update_modified=False)
-			# metric snapshot extension
-			frappe.get_doc(
-				{
-					"doctype": "Space Metric Snapshot",
-					"server": name,
-					"captured_at": now,
-					"cpu_percent": stats.get("cpu_percent") or 0,
-					"ram_used_mb": stats.get("ram_used_mb") or 0,
-					"disk_used_mb": stats.get("disk_used_mb") or 0,
-					"redis_ok": 1 if stats.get("redis_ok") else 0,
-					"workers": stats.get("workers") or 0,
-					"queue_length": stats.get("queue_length") or 0,
-					"raw_json": json.dumps(stats, default=str)[:50000],
-				}
-			).insert(ignore_permissions=True)
+			# Real cpu/ram/disk numbers (with metric-snapshot history) come from
+			# space_cloud.jobs.monitoring.refresh_server_health — this job only
+			# tracks liveness/health, it must not write its own Metric Snapshot
+			# rows with fabricated cpu_percent/ram_used_mb values.
 		except Exception:
 			frappe.db.set_value(
 				"Space Server",

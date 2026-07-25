@@ -284,12 +284,23 @@ def get_backend_mem(server_name: str | None = None) -> dict[str, Any]:
 	container = server.backend_container
 	r = run_on_bench(
 		server_name,
-		["docker", "stats", "--no-stream", "--format", "{{.MemUsage}}", container],
+		["docker", "stats", "--no-stream", "--format", "{{.CPUPerc}}|{{.MemUsage}}", container],
 		timeout_s=20,
 	)
 	raw = (r["stdout"] or "").strip()
-	parts = [p.strip() for p in raw.split("/")]
-	return {"raw": raw, "used": parts[0] if parts else "", "limit": parts[1] if len(parts) > 1 else ""}
+	cpu_raw, _, mem_raw = raw.partition("|")
+	parts = [p.strip() for p in mem_raw.split("/")]
+	cpu_percent = None
+	try:
+		cpu_percent = float(cpu_raw.strip().rstrip("%"))
+	except (TypeError, ValueError):
+		pass
+	return {
+		"raw": mem_raw,
+		"used": parts[0] if parts else "",
+		"limit": parts[1] if len(parts) > 1 else "",
+		"cpu_percent": cpu_percent,
+	}
 
 
 def backup_site(server_name: str | None, site: str, *, with_files: bool = True) -> dict[str, Any]:
@@ -334,6 +345,8 @@ def get_backend_stats(server_name: str | None = None) -> dict[str, Any]:
 
 	mem = get_backend_mem(server_name)
 	stats["memory"] = mem
+	if mem.get("cpu_percent") is not None:
+		stats["cpu_percent"] = mem["cpu_percent"]
 
 	try:
 		r = run_on_bench(server_name, ["du", "-sm", "sites"], timeout_s=60)

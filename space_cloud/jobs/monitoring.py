@@ -43,8 +43,10 @@ def refresh_server_health(server_name: str) -> dict:
 			)
 			server.ram_used_mb = val * mult
 		server.disk_used_mb = float(rich.get("disk_used_mb") or 0)
-		if server.ram_mb and server.ram_used_mb:
-			# soft CPU placeholder from queue pressure
+		if rich.get("cpu_percent") is not None:
+			server.cpu_used_percent = min(100.0, float(rich.get("cpu_percent")))
+		elif server.ram_mb and server.ram_used_mb:
+			# soft CPU placeholder from queue pressure, used only when docker stats didn't report cpu
 			server.cpu_used_percent = min(100.0, float(rich.get("queue_length") or 0) * 5)
 
 		for site_name in frappe.get_all(
