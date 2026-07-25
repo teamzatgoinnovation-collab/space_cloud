@@ -45,11 +45,18 @@ docker build -t space-agent:latest .
 docker run -d --name space-agent \
   --network frappe_docker_frappe_network \
   --restart unless-stopped \
+  --memory=128m --memory-swap=128m --cpus=0.25 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -e SPACE_AGENT_TOKEN="$(openssl rand -hex 32)" \
   -e SPACE_AGENT_CONTAINER=frappe_docker-backend-1 \
   space-agent:latest
 ```
+
+The `--memory`/`--cpus` limits matter: this droplet is a single-vCPU,
+2 GB box already running two Frappe sites, two Next.js services, and the
+whole docker-compose bench — nothing here runs with unbounded resources
+(see `space-web.service` / `space-admin-web.service`'s own
+`MemoryMax`/`CPUQuota`), so the Agent shouldn't either.
 
 The same token must be stored on the `Space Server` doctype's
 `agent_token` field so `space_cloud` can authenticate — see
