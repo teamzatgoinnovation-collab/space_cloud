@@ -33,6 +33,8 @@
   "docker_section",
   "docker_host",
   "backend_container",
+  "agent_endpoint",
+  "agent_token",
   "capacity_section",
   "cpu_cores",
   "ram_mb",
@@ -145,6 +147,19 @@
    "label": "Backend Container",
    "default": "frappe_docker-backend-1",
    "reqd": 1
+  },
+  {
+   "fieldname": "agent_endpoint",
+   "fieldtype": "Data",
+   "label": "Agent Endpoint",
+   "default": "http://space-agent:9000",
+   "description": "Space Agent base URL — reachable from the bench container's own network (e.g. Docker service name), not necessarily the public IP."
+  },
+  {
+   "fieldname": "agent_token",
+   "fieldtype": "Password",
+   "label": "Agent Token",
+   "description": "Must match SPACE_AGENT_TOKEN on the Space Agent container for this server."
   },
   {
    "fieldname": "capacity_section",

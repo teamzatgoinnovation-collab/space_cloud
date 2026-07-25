@@ -1,8 +1,11 @@
 """
-SSH / docker exec client for the shared Frappe bench.
+Bench command client for the shared Frappe bench.
 
-Phase 1: when Space runs ON the same droplet as the bench, prefer local
-`docker exec`. Otherwise SSH to the Space Server IP.
+Runs locally (in-process `subprocess`) when this worker already lives
+inside the bench container; otherwise calls the target Space Server's
+Space Agent over HTTP (see `agent/` and `services/agent_client.py`) —
+no SSH. Every function below keeps its original signature; only the
+transport underneath changed.
 """
 
 from __future__ import annotations
@@ -11,10 +14,11 @@ import os
 import re
 import shlex
 import subprocess
-import tempfile
 from typing import Any
 
 import frappe
+
+from space_cloud.services import agent_client
 
 PACKAGE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
 SITE_RE = re.compile(r"^[a-z0-9]([a-z0-9.-]{0,250}[a-z0-9])?$")
@@ -67,25 +71,6 @@ def _in_bench_container() -> bool:
 	return False
 
 
-def _same_host(server) -> bool:
-	"""True if we can docker-exec from the host (Space site on the bench host)."""
-	if os.environ.get("SPACE_BENCH_LOCAL") == "1":
-		return True
-	ip = (server.ip_address or "").strip()
-	if ip in ("127.0.0.1", "localhost"):
-		return True
-	try:
-		r = subprocess.run(
-			["docker", "inspect", server.backend_container, "--format", "{{.Id}}"],
-			capture_output=True,
-			text=True,
-			timeout=5,
-		)
-		return r.returncode == 0 and bool(r.stdout.strip())
-	except Exception:
-		return False
-
-
 def run_on_bench(
 	server_name: str | None,
 	argv: list[str],
@@ -97,21 +82,16 @@ def run_on_bench(
 		if not isinstance(a, str) or "\0" in a:
 			raise BenchError("Invalid argv token")
 
-	# Control plane site lives on the same bench → run bench commands in-process
-	if _in_bench_container():
+	# Control plane site lives on the same bench → run bench/du/ls commands
+	# in-process. Docker commands still need the Agent: the bench container
+	# itself normally has no docker CLI/socket access.
+	if argv[0] != "docker" and _in_bench_container():
 		return _run(list(argv), timeout_s, cwd="/home/frappe/frappe-bench")
 
-	container = server.backend_container or "frappe_docker-backend-1"
-
-	if _same_host(server):
-		cmd = ["docker", "exec", "-w", "/home/frappe/frappe-bench", container, *argv]
-		return _run(cmd, timeout_s)
-
-	return _run_ssh(
-		server,
-		["docker", "exec", "-w", "/home/frappe/frappe-bench", container, *argv],
-		timeout_s,
-	)
+	try:
+		return agent_client.call(server, list(argv), cwd="/home/frappe/frappe-bench", timeout_s=timeout_s)
+	except agent_client.AgentError as e:
+		raise BenchError(str(e), stdout=e.stdout, stderr=e.stderr, code=e.code) from e
 
 
 def _run(cmd: list[str], timeout_s: int, cwd: str | None = None) -> dict[str, Any]:
@@ -137,40 +117,6 @@ def _run(cmd: list[str], timeout_s: int, cwd: str | None = None) -> dict[str, An
 	return result
 
 
-def _run_ssh(server, remote_argv: list[str], timeout_s: int) -> dict[str, Any]:
-	remote = " ".join(shlex.quote(a) for a in remote_argv)
-	key_path = None
-	try:
-		key_material = server.get_password("private_key") if server.auth_method == "Private Key" else None
-	except Exception:
-		key_material = None
-
-	ssh_base = [
-		"ssh",
-		"-o",
-		"BatchMode=yes",
-		"-o",
-		"StrictHostKeyChecking=accept-new",
-		"-o",
-		f"ConnectTimeout=15",
-		"-p",
-		str(server.ssh_port or 22),
-	]
-	if key_material:
-		fd, key_path = tempfile.mkstemp(prefix="space-ssh-", text=True)
-		os.write(fd, key_material.encode() if isinstance(key_material, str) else key_material)
-		os.close(fd)
-		os.chmod(key_path, 0o600)
-		ssh_base += ["-i", key_path]
-
-	ssh_base += [f"{server.ssh_user}@{server.ip_address}", "--", remote]
-	try:
-		return _run(ssh_base, timeout_s)
-	finally:
-		if key_path and os.path.exists(key_path):
-			os.unlink(key_path)
-
-
 def test_server_connection(server_name: str) -> dict[str, Any]:
 	r = run_on_bench(server_name, ["bench", "--version"], timeout_s=30)
 	return {"ok": True, "version": (r["stdout"] or "").strip()[:200]}
@@ -179,9 +125,7 @@ def test_server_connection(server_name: str) -> dict[str, Any]:
 def restart_backend(server_name: str) -> dict[str, Any]:
 	server = get_server(server_name)
 	container = server.backend_container
-	if _same_host(server):
-		return _run(["docker", "restart", container], 120)
-	return _run_ssh(server, ["docker", "restart", container], 120)
+	return run_on_bench(server_name, ["docker", "restart", container], timeout_s=120)
 
 
 def list_sites(server_name: str | None = None) -> list[str]:
@@ -338,17 +282,11 @@ def get_site_disk_mb(server_name: str | None, site: str) -> int:
 def get_backend_mem(server_name: str | None = None) -> dict[str, Any]:
 	server = get_server(server_name)
 	container = server.backend_container
-	if _same_host(server):
-		r = _run(
-			["docker", "stats", "--no-stream", "--format", "{{.MemUsage}}", container],
-			20,
-		)
-	else:
-		r = _run_ssh(
-			server,
-			["docker", "stats", "--no-stream", "--format", "{{.MemUsage}}", container],
-			20,
-		)
+	r = run_on_bench(
+		server_name,
+		["docker", "stats", "--no-stream", "--format", "{{.MemUsage}}", container],
+		timeout_s=20,
+	)
 	raw = (r["stdout"] or "").strip()
 	parts = [p.strip() for p in raw.split("/")]
 	return {"raw": raw, "used": parts[0] if parts else "", "limit": parts[1] if len(parts) > 1 else ""}
@@ -385,7 +323,6 @@ def restore_site(
 
 def get_backend_stats(server_name: str | None = None) -> dict[str, Any]:
 	"""Collect CPU/RAM/disk/queue/worker hints for monitoring snapshots."""
-	server = get_server(server_name)
 	stats: dict[str, Any] = {"bench_status": "unknown", "scheduler_status": "unknown"}
 	try:
 		ver = test_server_connection(server_name)
@@ -398,17 +335,10 @@ def get_backend_stats(server_name: str | None = None) -> dict[str, Any]:
 	mem = get_backend_mem(server_name)
 	stats["memory"] = mem
 
-	container = server.backend_container or "frappe_docker-backend-1"
 	try:
-		if _same_host(server) or _in_bench_container():
-			# disk of sites folder
-			r = run_on_bench(server_name, ["du", "-sm", "sites"], timeout_s=60)
-			first = (r["stdout"] or "").strip().split()[0] if r["stdout"] else "0"
-			stats["disk_used_mb"] = int(first)
-		else:
-			r = _run_ssh(server, ["docker", "exec", container, "du", "-sm", "/home/frappe/frappe-bench/sites"], 60)
-			first = (r["stdout"] or "").strip().split()[0] if r["stdout"] else "0"
-			stats["disk_used_mb"] = int(first)
+		r = run_on_bench(server_name, ["du", "-sm", "sites"], timeout_s=60)
+		first = (r["stdout"] or "").strip().split()[0] if r["stdout"] else "0"
+		stats["disk_used_mb"] = int(first)
 	except Exception:
 		stats["disk_used_mb"] = 0
 
@@ -519,7 +449,7 @@ def docker_ps(server_name: str | None = None) -> list[dict[str, Any]]:
 	"""List docker containers (best-effort)."""
 	r = run_on_bench(
 		server_name,
-		["bash", "-lc", "docker ps -a --format '{{.ID}}\\t{{.Names}}\\t{{.Status}}\\t{{.Image}}' 2>/dev/null || true"],
+		["docker", "ps", "-a", "--format", "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}"],
 		timeout_s=30,
 	)
 	rows = []
@@ -533,7 +463,7 @@ def docker_ps(server_name: str | None = None) -> list[dict[str, Any]]:
 def docker_images(server_name: str | None = None) -> list[dict[str, Any]]:
 	r = run_on_bench(
 		server_name,
-		["bash", "-lc", "docker images --format '{{.Repository}}:{{.Tag}}\\t{{.ID}}\\t{{.Size}}' 2>/dev/null || true"],
+		["docker", "images", "--format", "{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}"],
 		timeout_s=30,
 	)
 	rows = []
@@ -545,20 +475,12 @@ def docker_images(server_name: str | None = None) -> list[dict[str, Any]]:
 
 
 def docker_volumes(server_name: str | None = None) -> list[str]:
-	r = run_on_bench(
-		server_name,
-		["bash", "-lc", "docker volume ls -q 2>/dev/null || true"],
-		timeout_s=30,
-	)
+	r = run_on_bench(server_name, ["docker", "volume", "ls", "-q"], timeout_s=30)
 	return [ln.strip() for ln in (r.get("stdout") or "").splitlines() if ln.strip()]
 
 
 def docker_networks(server_name: str | None = None) -> list[str]:
-	r = run_on_bench(
-		server_name,
-		["bash", "-lc", "docker network ls --format '{{.Name}}' 2>/dev/null || true"],
-		timeout_s=30,
-	)
+	r = run_on_bench(server_name, ["docker", "network", "ls", "--format", "{{.Name}}"], timeout_s=30)
 	return [ln.strip() for ln in (r.get("stdout") or "").splitlines() if ln.strip()]
 
 
@@ -566,7 +488,7 @@ def docker_restart(server_name: str | None, container: str) -> dict[str, Any]:
 	name = (container or "").strip()
 	if not name or any(c in name for c in (";", "|", "&", "`", " ", "\n")):
 		raise BenchError("Invalid container name")
-	return run_on_bench(server_name, ["bash", "-lc", f"docker restart {name}"], timeout_s=120)
+	return run_on_bench(server_name, ["docker", "restart", name], timeout_s=120)
 
 
 def docker_logs(server_name: str | None, container: str, tail: int = 100) -> str:
@@ -574,17 +496,13 @@ def docker_logs(server_name: str | None, container: str, tail: int = 100) -> str
 	if not name or any(c in name for c in (";", "|", "&", "`", " ", "\n")):
 		raise BenchError("Invalid container name")
 	n = max(1, min(int(tail or 100), 2000))
-	r = run_on_bench(server_name, ["bash", "-lc", f"docker logs --tail {n} {name} 2>&1 || true"], timeout_s=60)
+	r = run_on_bench(server_name, ["docker", "logs", "--tail", str(n), name], timeout_s=60)
 	return (r.get("stdout") or "")[:50000]
 
 
 def docker_cleanup(server_name: str | None = None) -> dict[str, Any]:
 	"""Prune unused images/containers — safe best-effort."""
-	return run_on_bench(
-		server_name,
-		["bash", "-lc", "docker system prune -f 2>/dev/null || true"],
-		timeout_s=300,
-	)
+	return run_on_bench(server_name, ["docker", "system", "prune", "-f"], timeout_s=300)
 
 
 def scale_workers_note(server_name: str | None = None) -> dict[str, Any]:

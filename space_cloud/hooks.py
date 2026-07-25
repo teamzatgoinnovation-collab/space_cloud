@@ -43,6 +43,14 @@ space_job_handlers = {
 	"delete_site": "space_cloud.jobs.lifecycle.run_delete_site",
 }
 
+# Modules the space.api.v{1..4}.space.* backward-compat surfaces delegate
+# to at call time (see space.registry.resolve_compat_function) — space
+# core never imports these modules by name.
+space_v1_compat_module = ["space_cloud.api.v1.space"]
+space_v2_compat_module = ["space_cloud.api.v2.space"]
+space_v3_compat_module = ["space_cloud.api.v3.space"]
+space_v4_compat_module = ["space_cloud.api.v4.space"]
+
 space_dashboard_cards = [
 	"Space Total Servers",
 	"Space Total Sites",
