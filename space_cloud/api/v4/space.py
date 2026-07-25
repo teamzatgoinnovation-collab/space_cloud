@@ -461,6 +461,26 @@ def bench_migrate_site(site: str):
 
 
 @frappe.whitelist()
+def change_site_plan(site: str, plan: str):
+	"""Move a site to a different Space Plan — updates the site's entitlement
+	and, if it has an active subscription, keeps that in sync too. Does not
+	install/remove apps; use bench_install_app/bench_uninstall_app for that."""
+	_rl()
+	require_roles("Space Admin", "System Manager")
+	if not frappe.db.exists("Space Plan", plan):
+		frappe.throw("Unknown plan")
+	site_doc = frappe.get_doc("Space Site", site)
+	old_plan = site_doc.plan
+	site_doc.plan = plan
+	site_doc.save(ignore_permissions=True)
+	if site_doc.subscription and frappe.db.exists("Space Subscription", site_doc.subscription):
+		frappe.get_doc("Space Subscription", site_doc.subscription).change_plan(plan)
+	audit.log_audit("change_site_plan", ref_doctype="Space Site", ref_name=site, details=f"{old_plan} -> {plan}")
+	frappe.db.commit()
+	return ok({"site": site, "plan": plan})
+
+
+@frappe.whitelist()
 def site_log_files(site: str):
 	_rl()
 	_require_site_access(site)
