@@ -412,6 +412,7 @@ frappe.pages["space-cloud"].on_page_load = function (wrapper) {
 	});
 
 	page.main.html('<div class="space-cloud-root"></div>');
+	const el = page.main.find(".space-cloud-root").get(0);
 	window.space_cloud = window.space_cloud || {};
 	window.space_cloud.vue = window.space_cloud.vue || {};
 
