@@ -52,13 +52,22 @@ containers on that network (e.g. `frappe_docker-backend-1`, where
 `space`/`space_cloud` actually run).
 
 `/ssl` additionally needs real host access `/exec` doesn't: bind mounts
-for `/etc/nginx`, `/etc/letsencrypt`, and a shared `/var/www/certbot`
-ACME webroot, plus `--pid=host` so it can send `SIGHUP` directly to the
-host's real nginx master process (found by scanning `/proc` for `nginx:
-master process` — nginx's reload signal only reaches a process in the
-same PID namespace as the sender). This is a real privilege increase,
-but a marginal one given the container already holds the Docker socket
-(itself sufficient for a docker-breakout to host root).
+for `/etc/nginx`, `/etc/letsencrypt`, a shared `/var/www/certbot` ACME
+webroot, and the host's nginx pidfile, plus `--pid=host` so it can send
+`SIGHUP` directly to the host's real nginx master process (nginx's reload
+signal only reaches a process in the same PID namespace as the sender).
+This is a real privilege increase, but a marginal one given the container
+already holds the Docker socket (itself sufficient for a docker-breakout
+to host root).
+
+The pidfile must be read directly (`/host-run/nginx.pid` below) rather
+than found by scanning `/proc` for a process matching `nginx: master
+process`: with `--pid=host` the shared namespace also exposes *other
+containers'* processes — `frappe_docker-frontend-1` runs its own internal
+nginx — so a scan can silently match the wrong one instead of the real
+host nginx. Confirmed live during development: the scan-based version
+picked the frontend container's nginx, which then correctly rejected the
+signal as a permission error, since it belongs to a different container.
 
 ```bash
 docker build -t space-agent:latest .
@@ -67,11 +76,12 @@ docker run -d --name space-agent \
   --network frappe_docker_default \
   --pid=host \
   --restart unless-stopped \
-  --memory=128m --memory-swap=128m --cpus=0.25 \
+  --memory=192m --memory-swap=192m --cpus=0.25 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /etc/nginx:/etc/nginx \
   -v /etc/letsencrypt:/etc/letsencrypt \
   -v /var/www/certbot:/var/www/certbot \
+  -v /run/nginx.pid:/host-run/nginx.pid:ro \
   -e SPACE_AGENT_TOKEN="$(openssl rand -hex 32)" \
   -e SPACE_AGENT_CONTAINER=frappe_docker-backend-1 \
   space-agent:latest

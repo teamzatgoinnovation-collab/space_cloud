@@ -152,24 +152,31 @@ def _write_vhost(domain: str, content: str) -> None:
     os.symlink(path, enabled)
 
 
+NGINX_PIDFILE = "/host-run/nginx.pid"
+
+
 def _reload_nginx() -> None:
     """Signal the real host nginx master process directly — /exec's generic
     docker-exec path can't reach it (no host filesystem access from inside
-    the bench container), so this needs --pid=host on this agent container."""
-    master_pid = None
-    for pid in os.listdir("/proc"):
-        if not pid.isdigit():
-            continue
-        try:
-            with open(f"/proc/{pid}/cmdline", "rb") as f:
-                cmdline = f.read().decode("utf-8", errors="ignore")
-        except (FileNotFoundError, ProcessLookupError, PermissionError):
-            continue
-        if cmdline.startswith("nginx:") and "master process" in cmdline:
-            master_pid = int(pid)
-            break
-    if not master_pid:
-        raise AgentError("nginx master process not found (is --pid=host set?)", status=500)
+    the bench container), so this needs --pid=host plus the pidfile bind
+    mounted in. Read the pidfile rather than scanning /proc for a process
+    matching "nginx: master process": with --pid=host the shared namespace
+    also exposes *other containers'* processes (e.g. frappe_docker-frontend-1
+    runs its own internal nginx) — a scan can match the wrong one, and did
+    during testing, silently signaling an unrelated container's process
+    instead of the real host nginx."""
+    try:
+        with open(NGINX_PIDFILE) as f:
+            master_pid = int(f.read().strip())
+    except (FileNotFoundError, ValueError) as e:
+        raise AgentError(f"could not read host nginx pidfile: {e}", status=500) from e
+    try:
+        with open(f"/proc/{master_pid}/cmdline", "rb") as f:
+            cmdline = f.read().decode("utf-8", errors="ignore")
+    except FileNotFoundError as e:
+        raise AgentError(f"nginx pid {master_pid} from pidfile not found in /proc", status=500) from e
+    if not cmdline.startswith("nginx:"):
+        raise AgentError(f"pid {master_pid} from nginx pidfile is not nginx: {cmdline!r}", status=500)
     os.kill(master_pid, signal.SIGHUP)
 
 
