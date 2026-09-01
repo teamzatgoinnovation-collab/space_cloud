@@ -53,6 +53,13 @@ space_v2_compat_module = ["space_cloud.api.v2.space"]
 space_v3_compat_module = ["space_cloud.api.v3.space"]
 space_v4_compat_module = ["space_cloud.api.v4.space"]
 
+# fn_names within each version's api that are @frappe.whitelist(allow_guest=True)
+# in space_cloud itself — must be mirrored here or the compat delegate (a new
+# function object) loses guest access even though the real implementation has it.
+space_v1_compat_guest_methods = ["list_catalog"]
+space_v3_compat_guest_methods = ["list_apps", "get_app"]
+space_v4_compat_guest_methods = ["list_regions"]
+
 space_dashboard_cards = [
 	"Space Total Servers",
 	"Space Total Sites",
