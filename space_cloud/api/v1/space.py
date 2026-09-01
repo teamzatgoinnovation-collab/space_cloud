@@ -138,6 +138,10 @@ def create_site(
 	admin_password: str,
 	customer: str | None = None,
 	apps: str | None = None,
+	company_name: str | None = None,
+	warehouse_name: str | None = None,
+	admin_full_name: str | None = None,
+	admin_email: str | None = None,
 ):
 	"""Create Space Site doc and enqueue provision. apps = comma-separated optional."""
 	require_roles("Space Admin", "Space Operator", "Space Customer", "System Manager")
@@ -204,7 +208,13 @@ def create_site(
 	site.insert(ignore_permissions=True)
 	frappe.db.commit()
 
-	result = enqueue_create_site(site.name)
+	result = enqueue_create_site(
+		site.name,
+		company_name=company_name,
+		warehouse_name=warehouse_name,
+		admin_full_name=admin_full_name,
+		admin_email=admin_email,
+	)
 	return ok({"site": site.name, "domain": site.domain, "job": result.get("job")})
 
 

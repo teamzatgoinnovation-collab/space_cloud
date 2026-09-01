@@ -85,6 +85,10 @@ def create_site_v4(
 	affinity_site: str | None = None,
 	anti_affinity_site: str | None = None,
 	manual_override: str | None = None,
+	company_name: str | None = None,
+	warehouse_name: str | None = None,
+	admin_full_name: str | None = None,
+	admin_email: str | None = None,
 ):
 	"""Create site with advanced placement; mirrors v2 response shape."""
 	_rl()
@@ -179,7 +183,13 @@ def create_site_v4(
 
 	from space_cloud.jobs.provision import enqueue_create_site
 
-	result = enqueue_create_site(site.name)
+	result = enqueue_create_site(
+		site.name,
+		company_name=company_name,
+		warehouse_name=warehouse_name,
+		admin_full_name=admin_full_name,
+		admin_email=admin_email,
+	)
 	audit.log_audit(
 		"create_site_v4",
 		api_method="space.api.v4.space.create_site_v4",

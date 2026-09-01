@@ -253,12 +253,21 @@ def complete_setup(
 	timezone: str = "Asia/Riyadh",
 	fy_start_date: str,
 	fy_end_date: str,
+	warehouse_name: str | None = None,
+	admin_full_name: str | None = None,
+	admin_email: str | None = None,
+	admin_password: str | None = None,
 ) -> dict[str, Any]:
 	"""Run Frappe's setup wizard non-interactively so a freshly-provisioned
 	site has a Company, default warehouses, fiscal year, and System Settings
-	instead of landing on ERPNext's own setup wizard screen. Deliberately
-	omits email/full_name/password: Space sign-in is always Administrator
-	(create_or_update_user no-ops without an email)."""
+	instead of landing on ERPNext's own setup wizard screen.
+
+	Space sign-in is Administrator-only by default (email/full_name/password
+	omitted — create_or_update_user no-ops without an email). Passing
+	admin_full_name + admin_email adds a second, named System Manager login
+	using the same admin_password already set on the site. Passing
+	warehouse_name additionally creates one custom-named Warehouse alongside
+	ERPNext's own standard set."""
 	args = {
 		"language": "English",
 		"country": country,
@@ -270,7 +279,12 @@ def complete_setup(
 		"fy_end_date": fy_end_date,
 		"enable_telemetry": 0,
 	}
-	return run_on_bench(
+	if admin_full_name and admin_email and admin_password:
+		args["full_name"] = admin_full_name
+		args["email"] = admin_email
+		args["password"] = admin_password
+
+	result = run_on_bench(
 		server_name,
 		[
 			"bench",
@@ -283,6 +297,28 @@ def complete_setup(
 		],
 		timeout_s=10 * 60,
 	)
+
+	if warehouse_name:
+		wh_doc = {
+			"doctype": "Warehouse",
+			"warehouse_name": warehouse_name,
+			"company": company_name,
+		}
+		run_on_bench(
+			server_name,
+			[
+				"bench",
+				"--site",
+				_assert_site(site),
+				"execute",
+				"frappe.client.insert",
+				"--kwargs",
+				json.dumps({"doc": wh_doc}),
+			],
+			timeout_s=60,
+		)
+
+	return result
 
 
 def set_maintenance(server_name: str | None, site: str, on: bool) -> dict[str, Any]:

@@ -11,7 +11,14 @@ from space.utils.activity import log_activity
 from space_cloud.utils.company_naming import default_company_name, derive_abbr
 
 
-def enqueue_create_site(site_name: str) -> dict:
+def enqueue_create_site(
+	site_name: str,
+	*,
+	company_name: str | None = None,
+	warehouse_name: str | None = None,
+	admin_full_name: str | None = None,
+	admin_email: str | None = None,
+) -> dict:
 	site = frappe.get_doc("Space Site", site_name)
 	if site.status not in ("Draft", "Failed"):
 		frappe.throw(f"Cannot create site in status {site.status}")
@@ -46,12 +53,23 @@ def enqueue_create_site(site_name: str) -> dict:
 		timeout=7200,
 		job_id=f"space-create-{site.name}-{job.name}",
 		deployment_job=job.name,
+		company_name=company_name,
+		warehouse_name=warehouse_name,
+		admin_full_name=admin_full_name,
+		admin_email=admin_email,
 	)
 	log_activity("Create site enqueued", "Space Site", site.name, job.name)
 	return {"ok": True, "job": job.name}
 
 
-def run_create_site(deployment_job: str | None = None, job_name: str | None = None):
+def run_create_site(
+	deployment_job: str | None = None,
+	job_name: str | None = None,
+	company_name: str | None = None,
+	warehouse_name: str | None = None,
+	admin_full_name: str | None = None,
+	admin_email: str | None = None,
+):
 	# Accept legacy kwarg name; frappe.enqueue reserves job_name for RQ metadata
 	job_name = deployment_job or job_name
 	if not job_name:
@@ -125,17 +143,24 @@ def run_create_site(deployment_job: str | None = None, job_name: str | None = No
 
 		if install_erpnext:
 			progress(80, "Running basic setup (company, warehouse, fiscal year)")
-			company_name = frappe.db.get_value("Space Customer", site.customer, "company") or None
-			company_name = (company_name or "").strip() or default_company_name(site.site_name)
+			resolved_company = (
+				(company_name or "").strip()
+				or (frappe.db.get_value("Space Customer", site.customer, "company") or "").strip()
+				or default_company_name(site.site_name)
+			)
 			today = now_datetime().date()
 			try:
 				bench_client.complete_setup(
 					server,
 					domain,
-					company_name=company_name,
-					company_abbr=derive_abbr(company_name),
+					company_name=resolved_company,
+					company_abbr=derive_abbr(resolved_company),
 					fy_start_date=f"{today.year}-01-01",
 					fy_end_date=f"{today.year}-12-31",
+					warehouse_name=(warehouse_name or "").strip() or None,
+					admin_full_name=(admin_full_name or "").strip() or None,
+					admin_email=(admin_email or "").strip() or None,
+					admin_password=site.get_password("admin_password"),
 				)
 			except bench_client.BenchError as e:
 				# Non-fatal: site is still usable, customer just lands on ERPNext's
