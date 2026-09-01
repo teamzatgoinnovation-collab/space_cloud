@@ -14,6 +14,13 @@ compared with hmac.compare_digest. The only real endpoint, /exec, still only
 runs `docker exec` (or `bash -lc` for the handful of shell one-liners
 bench_client.py already builds) against a fixed allowlist of argv[0]
 commands — it does not accept arbitrary host commands.
+
+/ssl is a second, deliberately narrow endpoint (not a broadening of /exec's
+allowlist): given a validated *.zatgo.online domain, it writes a fixed nginx
+vhost template, obtains a Let's Encrypt cert via certbot certonly --webroot,
+and reloads nginx by signaling its real host master process directly
+(requires --pid=host — see agent/README.md for why /exec's generic
+docker-exec-into-bench-container path can't reach host nginx at all).
 """
 
 from __future__ import annotations
@@ -21,6 +28,8 @@ from __future__ import annotations
 import hmac
 import json
 import os
+import re
+import signal
 import subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -28,9 +37,75 @@ TOKEN = os.environ.get("SPACE_AGENT_TOKEN", "").strip()
 PORT = int(os.environ.get("SPACE_AGENT_PORT", "9000"))
 DEFAULT_CONTAINER = os.environ.get("SPACE_AGENT_CONTAINER", "frappe_docker-backend-1")
 DEFAULT_CWD = "/home/frappe/frappe-bench"
+CERTBOT_EMAIL = os.environ.get("SPACE_AGENT_CERTBOT_EMAIL", "learnwithzat@gmail.com")
 
 # argv[0] values bench_client.py is allowed to ask us to run.
 ALLOWED_COMMANDS = {"bench", "docker", "bash", "du", "ls"}
+
+DOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.zatgo\.online$")
+
+NGINX_SITES_AVAILABLE = "/etc/nginx/sites-available"
+NGINX_SITES_ENABLED = "/etc/nginx/sites-enabled"
+CERTBOT_WEBROOT = "/var/www/certbot"
+
+# __DOMAIN__ substituted via str.replace — deliberately not .format()/f-string,
+# since nginx's own block syntax is full of literal { } that would collide
+# with Python format-string placeholders.
+NGINX_HTTP_ONLY_TEMPLATE = """server {
+    server_name __DOMAIN__;
+    client_max_body_size 50m;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 120s;
+    }
+
+    listen 80;
+}
+"""
+
+NGINX_SSL_TEMPLATE = """server {
+    server_name __DOMAIN__;
+    client_max_body_size 50m;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 120s;
+    }
+
+    listen 443 ssl;
+    ssl_certificate /etc/letsencrypt/live/__DOMAIN__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__DOMAIN__/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+}
+server {
+    if ($host = __DOMAIN__) {
+        return 301 https://$host$request_uri;
+    }
+    server_name __DOMAIN__;
+    listen 80;
+    return 404;
+}
+"""
 
 
 class AgentError(Exception):
@@ -67,6 +142,71 @@ def run_exec(payload: dict) -> dict:
     return {"ok": p.returncode == 0, "code": p.returncode, "stdout": p.stdout or "", "stderr": p.stderr or ""}
 
 
+def _write_vhost(domain: str, content: str) -> None:
+    path = os.path.join(NGINX_SITES_AVAILABLE, domain)
+    with open(path, "w") as f:
+        f.write(content.replace("__DOMAIN__", domain))
+    enabled = os.path.join(NGINX_SITES_ENABLED, domain)
+    if os.path.islink(enabled) or os.path.exists(enabled):
+        os.remove(enabled)
+    os.symlink(path, enabled)
+
+
+def _reload_nginx() -> None:
+    """Signal the real host nginx master process directly — /exec's generic
+    docker-exec path can't reach it (no host filesystem access from inside
+    the bench container), so this needs --pid=host on this agent container."""
+    master_pid = None
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                cmdline = f.read().decode("utf-8", errors="ignore")
+        except (FileNotFoundError, ProcessLookupError, PermissionError):
+            continue
+        if cmdline.startswith("nginx:") and "master process" in cmdline:
+            master_pid = int(pid)
+            break
+    if not master_pid:
+        raise AgentError("nginx master process not found (is --pid=host set?)", status=500)
+    os.kill(master_pid, signal.SIGHUP)
+
+
+def provision_ssl(payload: dict) -> dict:
+    domain = str(payload.get("domain") or "").strip().lower()
+    if not DOMAIN_RE.match(domain):
+        raise AgentError(f"invalid domain: {domain!r}", status=400)
+
+    os.makedirs(os.path.join(CERTBOT_WEBROOT, ".well-known", "acme-challenge"), exist_ok=True)
+
+    # 1. HTTP-only vhost so the ACME HTTP-01 challenge can be served.
+    _write_vhost(domain, NGINX_HTTP_ONLY_TEMPLATE)
+    _reload_nginx()
+
+    # 2. Obtain the cert. certonly (not --nginx) — never touches nginx config
+    #    or tries to reload it itself, since it has no way to reach the real
+    #    host process from in here.
+    cert_dir = f"/etc/letsencrypt/live/{domain}"
+    if not os.path.isdir(cert_dir):
+        p = subprocess.run(
+            [
+                "certbot", "certonly", "--webroot", "-w", CERTBOT_WEBROOT,
+                "-d", domain, "--non-interactive", "--agree-tos",
+                "-m", CERTBOT_EMAIL, "--no-eff-email",
+            ],
+            capture_output=True, text=True, timeout=90,
+        )
+        if p.returncode != 0:
+            raise AgentError(f"certbot failed: {(p.stderr or p.stdout)[:500]}", status=500)
+
+    # 3. Full vhost with the real SSL block, then reload again.
+    _write_vhost(domain, NGINX_SSL_TEMPLATE)
+    _reload_nginx()
+
+    return {"ok": True, "domain": domain}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "SpaceAgent/1.0"
 
@@ -95,14 +235,14 @@ class Handler(BaseHTTPRequestHandler):
         if not self._authorized():
             self._send_json(401, {"ok": False, "error": "unauthorized"})
             return
-        if self.path != "/exec":
+        if self.path not in ("/exec", "/ssl"):
             self._send_json(404, {"ok": False, "error": "not found"})
             return
         try:
             length = int(self.headers.get("Content-Length") or 0)
             raw = self.rfile.read(length) if length else b"{}"
             payload = json.loads(raw or b"{}")
-            result = run_exec(payload)
+            result = provision_ssl(payload) if self.path == "/ssl" else run_exec(payload)
             self._send_json(200, result)
         except AgentError as e:
             self._send_json(e.status, {"ok": False, "error": str(e)})

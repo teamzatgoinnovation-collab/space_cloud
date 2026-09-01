@@ -119,6 +119,17 @@ def run_create_site(
 			install_erpnext=install_erpnext,
 		)
 
+		progress(30, "Provisioning SSL certificate")
+		try:
+			bench_client.provision_ssl(server, domain)
+		except bench_client.BenchError as e:
+			# Non-fatal: the site itself is fine, it just needs a manual cert
+			# until this is retried (nginx still serves it, on the wrong cert).
+			job.reload()
+			job.output = (job.output or "") + f"\nWARN ssl: {e}"
+			job.save(ignore_permissions=True)
+			frappe.db.commit()
+
 		apps = []
 		for row in plan.allowed_apps or []:
 			pkg = (row.app_package or "").strip()

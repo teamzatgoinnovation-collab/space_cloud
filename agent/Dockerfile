@@ -1,6 +1,6 @@
 FROM python:3.12-alpine
 
-RUN apk add --no-cache docker-cli
+RUN apk add --no-cache docker-cli certbot
 
 COPY server.py /app/server.py
 

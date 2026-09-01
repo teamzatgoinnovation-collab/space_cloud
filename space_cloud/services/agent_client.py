@@ -83,6 +83,50 @@ def call(
     return result
 
 
+def provision_ssl(server, domain: str, *, timeout_s: float = 90) -> dict[str, Any]:
+    """POST /ssl on `server`'s Space Agent — writes the vhost, obtains a
+    Let's Encrypt cert via certbot certonly --webroot, reloads nginx.
+    Separate from call()/exec since /ssl needs real host nginx access that
+    /exec's docker-exec-into-bench-container path doesn't have."""
+    endpoint = (server.agent_endpoint or "").strip().rstrip("/")
+    if not endpoint:
+        raise AgentError(f"Space Server {server.name} has no agent_endpoint configured")
+    try:
+        token = server.get_password("agent_token")
+    except Exception:
+        token = None
+    if not token:
+        raise AgentError(f"Space Server {server.name} has no agent_token configured")
+
+    body = json.dumps({"domain": domain}).encode()
+    req = urllib.request.Request(
+        f"{endpoint}/ssl",
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s + 15) as res:
+            result = json.loads(res.read())
+    except urllib.error.HTTPError as e:
+        try:
+            detail = json.loads(e.read()).get("error")
+        except Exception:
+            detail = e.reason
+        raise AgentError(f"Space Agent SSL error ({e.code}): {detail}") from e
+    except urllib.error.URLError as e:
+        raise AgentError(f"Could not reach Space Agent at {endpoint}: {e.reason}") from e
+    except TimeoutError as e:
+        raise AgentError("Space Agent SSL request timed out", code=124) from e
+
+    if not result.get("ok"):
+        raise AgentError(str(result.get("error") or "SSL provisioning failed")[:500])
+    return result
+
+
 def ping(server) -> bool:
     endpoint = (server.agent_endpoint or "").strip().rstrip("/")
     if not endpoint:

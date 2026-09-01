@@ -242,6 +242,17 @@ def migrate_site(server_name: str | None, site: str) -> dict[str, Any]:
 	)
 
 
+def provision_ssl(server_name: str | None, domain: str) -> dict[str, Any]:
+	"""Write the nginx vhost + obtain a Let's Encrypt cert for a newly-created
+	site's domain, via the Agent's /ssl endpoint (not /exec — see agent/README.md
+	for why bench/docker commands can't reach host nginx)."""
+	server = get_server(server_name)
+	try:
+		return agent_client.provision_ssl(server, _assert_site(domain))
+	except agent_client.AgentError as e:
+		raise BenchError(str(e)) from e
+
+
 def complete_setup(
 	server_name: str | None,
 	site: str,

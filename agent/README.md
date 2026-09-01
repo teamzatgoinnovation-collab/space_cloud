@@ -19,7 +19,7 @@ space_cloud (Frappe worker) → HTTP → Space Agent (this) → docker exec → 
 
 ## API
 
-Single real endpoint, deliberately narrow:
+Two real endpoints, both deliberately narrow:
 
 - `GET /ping` — health check, no auth.
 - `POST /exec` — `{"argv": ["bench", "--site", "foo", "migrate"], "container"?: str, "cwd"?: str, "timeout_s"?: number}`
@@ -28,25 +28,50 @@ Single real endpoint, deliberately narrow:
   one of `bench`, `docker`, `bash`, `du`, `ls` — bench_client.py already
   builds every argv itself (site/package names are regex-validated before
   they ever reach this service), so this is defense in depth, not the
-  primary safety boundary.
+  primary safety boundary. Non-`docker` commands run via `docker exec` into
+  the bench container, which has **no host filesystem access** — it can't
+  touch `/etc/nginx` or reach the real host nginx process, which is why SSL
+  provisioning is a separate endpoint instead of an `/exec` one-liner.
+- `POST /ssl` — `{"domain": "foo.zatgo.online"}` → `{"ok": true, "domain": str}`.
+  Same auth. Validates the domain against `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.zatgo\.online$`,
+  writes a fixed nginx vhost template (HTTP-only, for the ACME challenge),
+  reloads nginx, runs `certbot certonly --webroot`, writes the final vhost
+  with the real SSL block, reloads nginx again. Idempotent — skips issuance
+  if `/etc/letsencrypt/live/<domain>` already exists. Needs real host
+  access (see Deploy below), unlike `/exec`.
 
 ## Deploy (current single-server setup)
 
 Runs as its own container on the **same Docker network as the bench
-backend container** (`frappe_docker_frappe_network`), with the host's
-Docker socket mounted so it can `docker exec` into the bench container.
-It does **not** publish a port to the host or the internet — it's only
-reachable from sibling containers on that network (e.g.
-`frappe_docker-backend-1`, where `space`/`space_cloud` actually run).
+backend container** (the actual network name varies by droplet — check
+`docker network ls` / `docker inspect frappe_docker-backend-1`, don't
+assume it matches this doc), with the host's Docker socket mounted so it
+can `docker exec` into the bench container. It does **not** publish a
+port to the host or the internet — it's only reachable from sibling
+containers on that network (e.g. `frappe_docker-backend-1`, where
+`space`/`space_cloud` actually run).
+
+`/ssl` additionally needs real host access `/exec` doesn't: bind mounts
+for `/etc/nginx`, `/etc/letsencrypt`, and a shared `/var/www/certbot`
+ACME webroot, plus `--pid=host` so it can send `SIGHUP` directly to the
+host's real nginx master process (found by scanning `/proc` for `nginx:
+master process` — nginx's reload signal only reaches a process in the
+same PID namespace as the sender). This is a real privilege increase,
+but a marginal one given the container already holds the Docker socket
+(itself sufficient for a docker-breakout to host root).
 
 ```bash
 docker build -t space-agent:latest .
 
 docker run -d --name space-agent \
-  --network frappe_docker_frappe_network \
+  --network frappe_docker_default \
+  --pid=host \
   --restart unless-stopped \
   --memory=128m --memory-swap=128m --cpus=0.25 \
   -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /etc/nginx:/etc/nginx \
+  -v /etc/letsencrypt:/etc/letsencrypt \
+  -v /var/www/certbot:/var/www/certbot \
   -e SPACE_AGENT_TOKEN="$(openssl rand -hex 32)" \
   -e SPACE_AGENT_CONTAINER=frappe_docker-backend-1 \
   space-agent:latest
