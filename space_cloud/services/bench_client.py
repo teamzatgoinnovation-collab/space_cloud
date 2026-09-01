@@ -242,6 +242,49 @@ def migrate_site(server_name: str | None, site: str) -> dict[str, Any]:
 	)
 
 
+def complete_setup(
+	server_name: str | None,
+	site: str,
+	*,
+	company_name: str,
+	company_abbr: str,
+	country: str = "Saudi Arabia",
+	currency: str = "SAR",
+	timezone: str = "Asia/Riyadh",
+	fy_start_date: str,
+	fy_end_date: str,
+) -> dict[str, Any]:
+	"""Run Frappe's setup wizard non-interactively so a freshly-provisioned
+	site has a Company, default warehouses, fiscal year, and System Settings
+	instead of landing on ERPNext's own setup wizard screen. Deliberately
+	omits email/full_name/password: Space sign-in is always Administrator
+	(create_or_update_user no-ops without an email)."""
+	args = {
+		"language": "English",
+		"country": country,
+		"timezone": timezone,
+		"currency": currency,
+		"company_name": company_name,
+		"company_abbr": company_abbr,
+		"fy_start_date": fy_start_date,
+		"fy_end_date": fy_end_date,
+		"enable_telemetry": 0,
+	}
+	return run_on_bench(
+		server_name,
+		[
+			"bench",
+			"--site",
+			_assert_site(site),
+			"execute",
+			"frappe.desk.page.setup_wizard.setup_wizard.setup_complete",
+			"--kwargs",
+			json.dumps({"args": args}),
+		],
+		timeout_s=10 * 60,
+	)
+
+
 def set_maintenance(server_name: str | None, site: str, on: bool) -> dict[str, Any]:
 	val = "on" if on else "off"
 	return run_on_bench(

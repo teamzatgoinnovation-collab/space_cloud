@@ -8,6 +8,7 @@ from frappe.utils import now_datetime
 from space.services import notifications
 from space_cloud.services import bench_client, deployment
 from space.utils.activity import log_activity
+from space_cloud.utils.company_naming import default_company_name, derive_abbr
 
 
 def enqueue_create_site(site_name: str) -> dict:
@@ -119,6 +120,28 @@ def run_create_site(deployment_job: str | None = None, job_name: str | None = No
 				# continue but log
 				job.reload()
 				job.output = (job.output or "") + f"\nWARN install {pkg}: {e}"
+				job.save(ignore_permissions=True)
+				frappe.db.commit()
+
+		if install_erpnext:
+			progress(80, "Running basic setup (company, warehouse, fiscal year)")
+			company_name = frappe.db.get_value("Space Customer", site.customer, "company") or None
+			company_name = (company_name or "").strip() or default_company_name(site.site_name)
+			today = now_datetime().date()
+			try:
+				bench_client.complete_setup(
+					server,
+					domain,
+					company_name=company_name,
+					company_abbr=derive_abbr(company_name),
+					fy_start_date=f"{today.year}-01-01",
+					fy_end_date=f"{today.year}-12-31",
+				)
+			except bench_client.BenchError as e:
+				# Non-fatal: site is still usable, customer just lands on ERPNext's
+				# own setup wizard instead of a pre-configured Company/Warehouse.
+				job.reload()
+				job.output = (job.output or "") + f"\nWARN basic setup: {e}"
 				job.save(ignore_permissions=True)
 				frappe.db.commit()
 
