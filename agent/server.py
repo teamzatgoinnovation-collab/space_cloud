@@ -29,7 +29,6 @@ import hmac
 import json
 import os
 import re
-import signal
 import subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -156,15 +155,26 @@ NGINX_PIDFILE = "/host-run/nginx.pid"
 
 
 def _reload_nginx() -> None:
-    """Signal the real host nginx master process directly — /exec's generic
-    docker-exec path can't reach it (no host filesystem access from inside
-    the bench container), so this needs --pid=host plus the pidfile bind
-    mounted in. Read the pidfile rather than scanning /proc for a process
-    matching "nginx: master process": with --pid=host the shared namespace
-    also exposes *other containers'* processes (e.g. frappe_docker-frontend-1
-    runs its own internal nginx) — a scan can match the wrong one, and did
-    during testing, silently signaling an unrelated container's process
-    instead of the real host nginx."""
+    """Signal the real host nginx master process to reload.
+
+    PID discovery: read the pidfile (bind-mounted from the host) rather
+    than scanning /proc for a process matching "nginx: master process" —
+    with --pid=host the shared namespace also exposes *other containers'*
+    processes (e.g. frappe_docker-frontend-1 runs its own internal nginx) —
+    a scan can match the wrong one, and did during testing, silently
+    signaling an unrelated container's process instead of the real host
+    nginx. The /proc/<pid>/cmdline check below (still relying on this
+    container's own --pid=host for read access) guards against that.
+
+    Signal delivery: os.kill() from this container's own process — even
+    with the right PID and --pid=host for *namespace visibility* — hit a
+    real, reproducible permission error (confirmed live: correct PID,
+    still EPERM), since visibility isn't the same as having the kernel
+    capability to signal a process outside this container's boundary. A
+    transient --privileged --pid=host helper container (spun up via the
+    already-mounted docker socket, exec_docker below) gets that capability
+    granted fresh from the Docker daemon regardless of this long-lived
+    container's own capability set, and was confirmed working live."""
     try:
         with open(NGINX_PIDFILE) as f:
             master_pid = int(f.read().strip())
@@ -177,7 +187,16 @@ def _reload_nginx() -> None:
         raise AgentError(f"nginx pid {master_pid} from pidfile not found in /proc", status=500) from e
     if not cmdline.startswith("nginx:"):
         raise AgentError(f"pid {master_pid} from nginx pidfile is not nginx: {cmdline!r}", status=500)
-    os.kill(master_pid, signal.SIGHUP)
+
+    p = subprocess.run(
+        [
+            "docker", "run", "--rm", "--privileged", "--pid=host", "alpine",
+            "kill", "-HUP", str(master_pid),
+        ],
+        capture_output=True, text=True, timeout=30,
+    )
+    if p.returncode != 0:
+        raise AgentError(f"nginx reload failed: {(p.stderr or p.stdout)[:300]}", status=500)
 
 
 def provision_ssl(payload: dict) -> dict:
