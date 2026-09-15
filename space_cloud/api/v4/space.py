@@ -11,6 +11,7 @@ from space_cloud.jobs import infrastructure as infra_jobs
 from space.services import audit, rate_limit
 from space_cloud.services import infrastructure, server_pool
 from space_cloud.services import bench_client
+from space_cloud.services import github_client
 from space_cloud.services import quota as quota_service
 from space_cloud.services import hosting_pool
 from space_cloud.jobs import bench_manager
@@ -468,6 +469,47 @@ def bench_migrate_site(site: str):
 	_rl()
 	require_roles("Space Admin", "Space Operator", "System Manager")
 	return ok(bench_manager.enqueue_migrate_site(site))
+
+
+@frappe.whitelist()
+def bench_github_apps(force_refresh: bool = False):
+	"""Frappe custom app repos available from the configured GitHub org, for
+	the Bench Manager install dropdown. Never fails the request — a missing/
+	bad PAT comes back as {"configured": false, "error": "..."}."""
+	_rl()
+	require_roles("Space Admin", "Space Operator", "System Manager", "Readonly Auditor")
+	return ok(github_client.list_org_apps(force_refresh=frappe.utils.cint(force_refresh)))
+
+
+@frappe.whitelist()
+def bench_site_app_versions(site: str):
+	_rl()
+	_require_site_access(site)
+	return ok(bench_manager.get_site_app_versions(site))
+
+
+@frappe.whitelist()
+def bench_clear_cache(site: str):
+	_rl()
+	require_roles("Space Admin", "Space Operator", "System Manager")
+	return ok(bench_manager.enqueue_clear_cache(site))
+
+
+@frappe.whitelist()
+def bench_build_assets(site: str, app_package: str | None = None):
+	_rl()
+	require_roles("Space Admin", "System Manager")
+	return ok(bench_manager.enqueue_build_assets(site, app_package=app_package))
+
+
+@frappe.whitelist()
+def bench_restart_backend(server: str):
+	"""Hard `docker restart` on the shared backend container — affects every
+	site on this server, not just one. Space Admin / System Manager only."""
+	_rl()
+	require_roles("Space Admin", "System Manager")
+	job = bench_manager.enqueue_restart_backend(server)
+	return ok({"job": job})
 
 
 @frappe.whitelist()

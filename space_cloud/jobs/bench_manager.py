@@ -73,6 +73,33 @@ def run_bench_restart(space_job: str, server: str):
 	return result
 
 
+def enqueue_restart_backend(server: str) -> str:
+	"""Hard `docker restart <backend_container>` — distinct from the soft,
+	best-effort run_bench_restart above. Affects every site on this server,
+	not just one; the UI must warn about that before calling this."""
+	from space.jobs.runner import enqueue_job
+
+	frappe.get_doc("Space Server", server)
+	job_name = enqueue_job(
+		"bench_restart_backend", reference_doctype="Space Server", reference_name=server, server=server
+	)
+	audit.log_audit("bench_manager_restart_backend_enqueue", ref_doctype="Space Server", ref_name=server)
+	return job_name
+
+
+def run_bench_restart_backend(space_job: str, server: str):
+	result = bench_client.restart_backend(server)
+	log_activity("bench restart-backend (docker restart)", "Space Server", server, space_job)
+	notifications.notify(
+		title=f"Backend container restarted: {server}",
+		event_type="generic",
+		message=f"docker restart ran on {server}'s shared backend container — every site on this server was briefly unreachable.",
+		ref_doctype="Space Job",
+		ref_name=space_job,
+	)
+	return result
+
+
 # ---------------------------------------------------------------------------
 # Site-scoped (Space Deployment Job) — install-app, uninstall-app, migrate
 # ---------------------------------------------------------------------------
@@ -304,6 +331,100 @@ def run_migrate_site(deployment_job: str):
 		raise
 
 
+def enqueue_clear_cache(site_name: str) -> dict:
+	site = frappe.get_doc("Space Site", site_name)
+	job = _new_deployment_job(site, "Clear Cache", estimated_minutes=2)
+	frappe.enqueue(
+		"space_cloud.jobs.bench_manager.run_clear_cache",
+		queue="short",
+		timeout=300,
+		job_id=f"space-bm-clearcache-{site.name}-{job.name}",
+		deployment_job=job.name,
+	)
+	audit.log_audit("bench_manager_clear_cache_enqueue", ref_doctype="Space Site", ref_name=site.name)
+	return {"ok": True, "job": job.name}
+
+
+def run_clear_cache(deployment_job: str):
+	job = frappe.get_doc("Space Deployment Job", deployment_job)
+	site = frappe.get_doc("Space Site", job.site)
+	server = job.server
+	domain = site.domain
+
+	try:
+		_progress(job, 50, "clear-cache")
+		bench_client.clear_cache(server, domain)
+
+		job.reload()
+		job.status = "Succeeded"
+		job.progress = 100
+		job.finished_at = now_datetime()
+		job.can_cancel = 0
+		job.save(ignore_permissions=True)
+		frappe.db.commit()
+		audit.log_audit("bench_manager_clear_cache", ref_doctype="Space Site", ref_name=site.name)
+		log_activity("Cache cleared (bench manager)", "Space Site", site.name, job.name)
+	except Exception as e:
+		job.reload()
+		job.status = "Failed"
+		job.error_log = frappe.get_traceback() or str(e)
+		job.finished_at = now_datetime()
+		job.can_retry = 1
+		job.save(ignore_permissions=True)
+		frappe.db.commit()
+		raise
+
+
+def enqueue_build_assets(site_name: str, app_package: str | None = None) -> dict:
+	site = frappe.get_doc("Space Site", site_name)
+	job = _new_deployment_job(site, "Rebuild Assets", estimated_minutes=10)
+	frappe.enqueue(
+		"space_cloud.jobs.bench_manager.run_build_assets",
+		queue="long",
+		timeout=3600,
+		job_id=f"space-bm-buildassets-{site.name}-{job.name}",
+		deployment_job=job.name,
+		app_package=app_package,
+	)
+	audit.log_audit(
+		"bench_manager_build_assets_enqueue", ref_doctype="Space Site", ref_name=site.name, details=app_package
+	)
+	return {"ok": True, "job": job.name}
+
+
+def run_build_assets(deployment_job: str, app_package: str | None = None):
+	job = frappe.get_doc("Space Deployment Job", deployment_job)
+	site = frappe.get_doc("Space Site", job.site)
+	server = job.server
+
+	try:
+		_progress(job, 40, f"bench build{f' --app {app_package}' if app_package else ''}")
+		bench_client.build_assets(server, app_package)
+		_progress(job, 90, "clear cache")
+		bench_client.clear_cache(server, site.domain)
+
+		job.reload()
+		job.status = "Succeeded"
+		job.progress = 100
+		job.finished_at = now_datetime()
+		job.can_cancel = 0
+		job.save(ignore_permissions=True)
+		frappe.db.commit()
+		audit.log_audit(
+			"bench_manager_build_assets", ref_doctype="Space Site", ref_name=site.name, details=app_package
+		)
+		log_activity("Assets rebuilt (bench manager)", "Space Site", site.name, job.name)
+	except Exception as e:
+		job.reload()
+		job.status = "Failed"
+		job.error_log = frappe.get_traceback() or str(e)
+		job.finished_at = now_datetime()
+		job.can_retry = 1
+		job.save(ignore_permissions=True)
+		frappe.db.commit()
+		raise
+
+
 # ---------------------------------------------------------------------------
 # Read-only helpers (no job)
 # ---------------------------------------------------------------------------
@@ -318,3 +439,22 @@ def list_site_apps(site: str) -> list[str]:
 	if not row:
 		frappe.throw("Site not found")
 	return bench_client.list_apps_on_site(row.server, row.domain)
+
+
+def get_site_app_versions(site: str) -> list[dict]:
+	"""Installed apps on `site` with their version + current git commit —
+	each app's git_head is fetched independently so one broken/missing
+	apps/<pkg> directory can't blank out the whole table."""
+	row = frappe.db.get_value("Space Site", site, ["server", "domain"], as_dict=True)
+	if not row:
+		frappe.throw("Site not found")
+	versions = bench_client.get_app_versions_json(row.server, row.domain)
+	rows = []
+	for app_package, version in versions.items():
+		try:
+			git_head = bench_client.git_head(row.server, app_package)
+		except Exception:
+			git_head = ""
+		rows.append({"app_package": app_package, "version": version, "git_head": git_head})
+	rows.sort(key=lambda r: r["app_package"])
+	return rows

@@ -45,7 +45,7 @@
    "fieldname": "job_type",
    "fieldtype": "Select",
    "label": "Job Type",
-   "options": "Create\nSuspend\nResume\nDelete\nUpdate\nBackup\nRestore\nRollback\nInstall App\nUpdate App\nRemove App\nRebuild Assets\nMigrate Site\nMaintenance\nFailover\nDR Test\nScale Workers",
+   "options": "Create\nSuspend\nResume\nDelete\nUpdate\nBackup\nRestore\nRollback\nInstall App\nUpdate App\nRemove App\nClear Cache\nRebuild Assets\nMigrate Site\nMaintenance\nFailover\nDR Test\nScale Workers",
    "reqd": 1,
    "in_list_view": 1
   },
