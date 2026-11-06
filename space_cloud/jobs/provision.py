@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import frappe
 from frappe.utils import now_datetime
 
@@ -85,6 +87,13 @@ def run_create_site(
 		job.output = ((job.output or "") + f"\n[{pct}%] {msg}").strip()
 		if not job.started_at:
 			job.started_at = now_datetime()
+		# Timestamped checkpoint for the deployment dashboard's real stage durations.
+		try:
+			timeline = json.loads(job.timeline_json or "[]")
+		except Exception:
+			timeline = []
+		timeline.append({"at": str(now_datetime()), "event": "progress", "detail": msg, "progress": pct})
+		job.timeline_json = json.dumps(timeline)[-100000:]
 		job.save(ignore_permissions=True)
 		frappe.db.commit()
 
