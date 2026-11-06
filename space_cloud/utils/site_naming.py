@@ -86,7 +86,11 @@ def archive_stale_site(slug: str, domain: str, customer: str | None) -> bool:
 	frappe.db.set_value(
 		"Space Site", name, {"site_name": archived, "domain": archived}, update_modified=False
 	)
-	frappe.rename_doc("Space Site", name, archived, force=True, ignore_permissions=True)
+	# frappe.rename_doc() is a wrapper without ignore_permissions; the model-level
+	# function has it (customers have no rename permission on Space Site).
+	from frappe.model.rename_doc import rename_doc
+
+	rename_doc("Space Site", name, archived, force=True, ignore_permissions=True)
 	if old.subscription and old.status == "Failed":
 		frappe.db.set_value(
 			"Space Subscription", old.subscription, "status", "Cancelled", update_modified=False
