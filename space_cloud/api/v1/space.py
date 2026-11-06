@@ -12,7 +12,7 @@ from space_cloud.jobs.lifecycle import enqueue_delete_site, enqueue_resume_site,
 from space_cloud.jobs.provision import enqueue_create_site
 from space.services import audit, rate_limit
 from space_cloud.services import bench_client, server_pool
-from space_cloud.utils.site_naming import build_domain, validate_slug
+from space_cloud.utils.site_naming import archive_stale_site, build_domain, validate_slug
 
 
 @frappe.whitelist(allow_guest=True)
@@ -147,10 +147,12 @@ def create_site(
 	require_roles("Space Admin", "Space Operator", "Space Customer", "System Manager")
 	slug = validate_slug(site_name)
 	domain = build_domain(slug)
-	if frappe.db.exists("Space Site", slug) or frappe.db.exists("Space Site", {"domain": domain}):
-		return fail("Site already exists", "EXISTS")
-
 	cust = customer or customer_for_user()
+	if frappe.db.exists("Space Site", slug) or frappe.db.exists("Space Site", {"domain": domain}):
+		# A Failed/Deleted site of this same customer doesn't keep the name forever.
+		if not archive_stale_site(slug, domain, cust):
+			return fail("Site already exists", "EXISTS")
+
 	if not cust:
 		# Auto-create customer for portal user
 		if frappe.session.user in (None, "Guest"):
