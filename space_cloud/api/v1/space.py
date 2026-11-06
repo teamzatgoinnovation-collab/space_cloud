@@ -246,7 +246,24 @@ def get_job(name: str):
 	job = frappe.get_doc("Space Deployment Job", name)
 	site = frappe.get_doc("Space Site", job.site)
 	_ensure_site_access(site)
-	return ok(job.as_dict())
+	data = job.as_dict()
+	data["viewer_is_admin"] = _is_site_admin()
+	return ok(data)
+
+
+@frappe.whitelist()
+def list_jobs(site: str):
+	"""A site's deployment jobs, newest first (same access rule as get_job)."""
+	doc = frappe.get_doc("Space Site", site)
+	_ensure_site_access(doc)
+	rows = frappe.get_all(
+		"Space Deployment Job",
+		filters={"site": site},
+		fields=["name", "job_type", "status", "progress", "started_at", "finished_at", "creation", "modified"],
+		order_by="creation desc",
+		limit=50,
+	)
+	return ok(rows)
 
 
 @frappe.whitelist()
@@ -283,11 +300,16 @@ def list_subscriptions():
 	return ok(rows)
 
 
+_SITE_ADMIN_ROLES = {"System Manager", "Space Admin", "Space Operator", "Support Engineer"}
+
+
+def _is_site_admin() -> bool:
+	return frappe.session.user == "Administrator" or bool(set(frappe.get_roles()) & _SITE_ADMIN_ROLES)
+
+
 def _ensure_site_access(doc, write: bool = False):
 	roles = set(frappe.get_roles())
-	if frappe.session.user == "Administrator" or roles.intersection(
-		{"System Manager", "Space Admin", "Space Operator", "Support Engineer"}
-	):
+	if _is_site_admin():
 		return
 	cust = customer_for_user()
 	if not cust or doc.customer != cust:
