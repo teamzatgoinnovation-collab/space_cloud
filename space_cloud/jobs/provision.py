@@ -64,6 +64,19 @@ def enqueue_create_site(
 	return {"ok": True, "job": job.name}
 
 
+def _start_trial(site) -> None:
+	"""The 30-day trial starts when provisioning succeeds (not at signup, not at wizard time). Never fails the job."""
+	if not site.subscription:
+		return
+	try:
+		from space.services import lifecycle
+
+		lifecycle.start_trial(site.subscription)
+		frappe.db.commit()
+	except Exception:
+		frappe.log_error(title=f"Space lifecycle: trial start failed for {site.name}")
+
+
 def run_create_site(
 	deployment_job: str | None = None,
 	job_name: str | None = None,
@@ -220,6 +233,7 @@ def run_create_site(
 		frappe.db.commit()
 		deployment.append_timeline(job.name, "succeeded", domain, 100)
 		log_activity("Site created", "Space Site", site.name, domain)
+		_start_trial(site)
 		notifications.notify(
 			title=f"Site created: {site.name}",
 			event_type="site_created",

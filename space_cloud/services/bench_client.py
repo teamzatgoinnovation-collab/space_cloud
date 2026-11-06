@@ -357,6 +357,15 @@ def drop_site(server_name: str | None, site: str, db_root_password: str | None =
 	return run_on_bench(server_name, args, timeout_s=30 * 60)
 
 
+def purge_archived_site(server_name: str | None, site: str) -> dict[str, Any]:
+	"""`bench drop-site` moves the site folder into <bench>/archived/sites instead of erasing it (verified on the
+	local bench); remove that copy -- this site's folders only: the name is validated and the glob is the exact
+	name or the exact name plus a timestamp suffix."""
+	site = _assert_site(site)
+	cmd = f"rm -rf -- archived/sites/{site} archived/sites/{site}-[0-9]*"
+	return run_on_bench(server_name, ["bash", "-c", cmd], timeout_s=300)
+
+
 def list_apps_on_site(server_name: str | None, site: str) -> list[str]:
 	r = run_on_bench(server_name, ["bench", "--site", _assert_site(site), "list-apps"], timeout_s=60)
 	apps = []

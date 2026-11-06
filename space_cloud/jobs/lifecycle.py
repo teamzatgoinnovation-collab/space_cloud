@@ -52,10 +52,36 @@ def enqueue_resume_site(site_name: str) -> dict:
 	return _enqueue(site_name, "Resume", "space_cloud.jobs.lifecycle.run_resume_site")
 
 
-def enqueue_delete_site(site_name: str) -> dict:
+def guard_deletable(site, source: str = "user") -> None:
+	"""Refuse to delete what must never be deleted. Applies to every route (customer button, admin, scheduler):
+	the portal's own site and protected domains first, then -- for the inactivity scheduler -- that the
+	subscription really is scheduled, was warned, and is not held or excluded."""
+	from space.services import lifecycle as lc
+
+	domain = (site.domain or "").lower()
+	if not domain or domain in lc.protected_domains():
+		frappe.throw(f"{site.name} is a protected site and cannot be deleted")
+	if source != "inactivity":
+		return
+	sub = site.subscription
+	if not sub:
+		frappe.throw("No subscription: refusing automatic deletion")
+	row = frappe.db.get_value(
+		"Space Subscription", sub, ["lifecycle_status", "deletion_hold", "paid_until"], as_dict=True
+	)
+	if row.lifecycle_status != lc.DELETION_SCHEDULED:
+		frappe.throw("Subscription is not scheduled for deletion")
+	if row.deletion_hold or lc.is_excluded(site.name) or lc.is_excluded(domain):
+		frappe.throw("Site is held or excluded from automatic deletion")
+	if lc.is_paid(row.paid_until):
+		frappe.throw("Subscription is paid: refusing automatic deletion")
+
+
+def enqueue_delete_site(site_name: str, source: str = "user") -> dict:
 	site = frappe.get_doc("Space Site", site_name)
 	if site.status == "Deleted":
 		frappe.throw("Site already deleted")
+	guard_deletable(site, source)
 	return _enqueue(site_name, "Delete", "space_cloud.jobs.lifecycle.run_delete_site")
 
 
@@ -125,6 +151,32 @@ def _run_simple(job_name: str, *, maintenance: bool, final_status: str):
 		raise
 
 
+def _stage(site, name: str) -> None:
+	"""Audit row per deletion stage: a failed run shows exactly how far it got."""
+	from space.services import lifecycle as lc
+
+	lc.record_event("deletion_stage", subscription=site.subscription, site=site.name, details={"stage": name})
+	frappe.db.commit()
+
+
+def _cleanup_metadata(site) -> None:
+	"""Provisioning metadata of THIS site only: domains and backup records (their files went with the site folder)."""
+	frappe.db.set_value("Space Backup", {"site": site.name}, "status", "Deleted")
+	frappe.db.delete("Space Domain", {"site": site.name})
+	frappe.db.commit()
+
+
+def _mark_subscription_deleted(site) -> None:
+	from space.services import lifecycle as lc
+
+	if site.subscription and frappe.db.get_value("Space Subscription", site.subscription, "lifecycle_status"):
+		try:
+			lc.transition(site.subscription, lc.DELETED, reason="site deleted", push=False)
+			lc.record_event("deletion_completed", subscription=site.subscription, site=site.name)
+		except Exception:
+			frappe.log_error(title=f"Space lifecycle: could not mark {site.name} deleted")
+
+
 def run_delete_site(deployment_job: str | None = None, job_name: str | None = None):
 	job_name = deployment_job or job_name
 	if not job_name:
@@ -138,12 +190,24 @@ def run_delete_site(deployment_job: str | None = None, job_name: str | None = No
 		job.save(ignore_permissions=True)
 		frappe.db.commit()
 
+		guard_deletable(site, "user")  # protected domains again, at run time (settings may have changed since enqueue)
+		_stage(site, "guards_passed")
 		if site.domain in bench_client.list_sites(job.server):
 			job.progress = 40
 			job.output = f"Dropping {site.domain}"
 			job.save(ignore_permissions=True)
 			frappe.db.commit()
 			bench_client.drop_site(job.server, site.domain)
+			_stage(site, "dropped")
+		if site.domain in bench_client.list_sites(job.server):
+			raise RuntimeError(f"{site.domain} is still on the bench after drop-site")
+		try:
+			bench_client.purge_archived_site(job.server, site.domain)
+			_stage(site, "files_purged")
+		except bench_client.BenchError as e:
+			job.reload()
+			job.output = (job.output or "") + f"\nWARN archived files: {e}"
+			job.save(ignore_permissions=True)
 		try:
 			bench_client.remove_route(job.server, site.domain)
 		except bench_client.BenchError as e:
@@ -151,9 +215,12 @@ def run_delete_site(deployment_job: str | None = None, job_name: str | None = No
 			job.output = (job.output or "") + f"\nWARN route removal: {e}"
 			job.save(ignore_permissions=True)
 
+		_cleanup_metadata(site)
 		site.reload()
 		site.status = "Deleted"
 		site.save(ignore_permissions=True)
+		_stage(site, "completed")
+		_mark_subscription_deleted(site)
 
 		job.reload()
 		job.status = "Succeeded"
