@@ -30,6 +30,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TOKEN = os.environ.get("SPACE_AGENT_TOKEN", "").strip()
@@ -41,7 +42,27 @@ CERTBOT_EMAIL = os.environ.get("SPACE_AGENT_CERTBOT_EMAIL", "learnwithzat@gmail.
 # argv[0] values bench_client.py is allowed to ask us to run.
 ALLOWED_COMMANDS = {"bench", "docker", "bash", "du", "ls"}
 
-DOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.zatgo\.online$")
+# Tenant domains this agent will route, comma-separated suffixes (no leading dot).
+DOMAIN_SUFFIXES = [
+    x.strip().lower().lstrip(".")
+    for x in os.environ.get("SPACE_AGENT_DOMAIN_SUFFIXES", "zatgo.online").split(",")
+    if x.strip()
+]
+DOMAIN_RE = re.compile(
+    r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.(" + "|".join(re.escape(x) for x in DOMAIN_SUFFIXES) + r")$"
+)
+
+# "host" = legacy host nginx + certbot (old droplet). "docker" = nginx-proxy +
+# acme-companion: one tiny forwarder container per tenant carrying
+# VIRTUAL_HOST/LETSENCRYPT_HOST, picked up through the Docker socket.
+SSL_MODE = os.environ.get("SPACE_AGENT_SSL_MODE", "host").strip().lower()
+ROUTE_NETWORK = os.environ.get("SPACE_AGENT_NETWORK", "erpnext_default")
+ROUTE_UPSTREAM = os.environ.get("SPACE_AGENT_UPSTREAM", "erpnext-frontend-1")
+ROUTE_UPSTREAM_PORT = os.environ.get("SPACE_AGENT_UPSTREAM_PORT", "8080")
+ROUTE_IMAGE = os.environ.get("SPACE_AGENT_ROUTE_IMAGE", "alpine/socat")
+PROXY_CONTAINER = os.environ.get("SPACE_AGENT_PROXY_CONTAINER", "erpnext-nginx-proxy-1")
+CERT_WAIT_S = int(os.environ.get("SPACE_AGENT_CERT_WAIT_S", "75"))
+ROUTE_LABEL = "space.route"
 
 NGINX_SITES_AVAILABLE = "/etc/nginx/sites-available"
 NGINX_SITES_ENABLED = "/etc/nginx/sites-enabled"
@@ -199,10 +220,65 @@ def _reload_nginx() -> None:
         raise AgentError(f"nginx reload failed: {(p.stderr or p.stdout)[:300]}", status=500)
 
 
+def _route_name(domain: str) -> str:
+    return "route-" + domain.replace(".", "-")
+
+
+def _docker(*args: str, timeout: int = 60) -> subprocess.CompletedProcess:
+    return subprocess.run(["docker", *args], capture_output=True, text=True, timeout=timeout)
+
+
+def _cert_ready(domain: str) -> bool:
+    p = _docker("exec", PROXY_CONTAINER, "test", "-f", f"/etc/nginx/certs/{domain}.crt", timeout=15)
+    return p.returncode == 0
+
+
+def provision_route(domain: str) -> dict:
+    """Docker mode: idempotently start the per-tenant forwarder and wait for acme-companion's cert."""
+    name = _route_name(domain)
+    state = _docker("inspect", "-f", "{{.State.Running}}", name)
+    if state.returncode == 0 and state.stdout.strip() != "true":
+        _docker("rm", "-f", name)
+        state = subprocess.CompletedProcess([], 1)
+    if state.returncode != 0:
+        p = _docker(
+            "run", "-d", "--name", name, "--restart", "unless-stopped",
+            "--network", ROUTE_NETWORK, "--label", f"{ROUTE_LABEL}={domain}",
+            "-e", f"VIRTUAL_HOST={domain}", "-e", f"LETSENCRYPT_HOST={domain}",
+            "-e", "VIRTUAL_PORT=8080",
+            ROUTE_IMAGE, "tcp-listen:8080,fork,reuseaddr",
+            f"tcp:{ROUTE_UPSTREAM}:{ROUTE_UPSTREAM_PORT}",
+            timeout=120,
+        )
+        if p.returncode != 0:
+            raise AgentError(f"could not start route container: {(p.stderr or p.stdout)[:300]}", status=500)
+    deadline = time.time() + CERT_WAIT_S
+    while time.time() < deadline:
+        if _cert_ready(domain):
+            return {"ok": True, "domain": domain, "mode": "docker"}
+        time.sleep(3)
+    raise AgentError(
+        f"route {name} is up but no certificate for {domain} within {CERT_WAIT_S}s "
+        "(acme-companion may still be issuing; re-run /ssl to re-check)",
+        status=504,
+    )
+
+
+def remove_route(payload: dict) -> dict:
+    domain = str(payload.get("domain") or "").strip().lower()
+    if not DOMAIN_RE.match(domain):
+        raise AgentError(f"invalid domain: {domain!r}", status=400)
+    if SSL_MODE == "docker":
+        _docker("rm", "-f", _route_name(domain))
+    return {"ok": True, "domain": domain}
+
+
 def provision_ssl(payload: dict) -> dict:
     domain = str(payload.get("domain") or "").strip().lower()
     if not DOMAIN_RE.match(domain):
         raise AgentError(f"invalid domain: {domain!r}", status=400)
+    if SSL_MODE == "docker":
+        return provision_route(domain)
 
     os.makedirs(os.path.join(CERTBOT_WEBROOT, ".well-known", "acme-challenge"), exist_ok=True)
 
@@ -261,14 +337,19 @@ class Handler(BaseHTTPRequestHandler):
         if not self._authorized():
             self._send_json(401, {"ok": False, "error": "unauthorized"})
             return
-        if self.path not in ("/exec", "/ssl"):
+        if self.path not in ("/exec", "/ssl", "/unroute"):
             self._send_json(404, {"ok": False, "error": "not found"})
             return
         try:
             length = int(self.headers.get("Content-Length") or 0)
             raw = self.rfile.read(length) if length else b"{}"
             payload = json.loads(raw or b"{}")
-            result = provision_ssl(payload) if self.path == "/ssl" else run_exec(payload)
+            if self.path == "/ssl":
+                result = provision_ssl(payload)
+            elif self.path == "/unroute":
+                result = remove_route(payload)
+            else:
+                result = run_exec(payload)
             self._send_json(200, result)
         except AgentError as e:
             self._send_json(e.status, {"ok": False, "error": str(e)})

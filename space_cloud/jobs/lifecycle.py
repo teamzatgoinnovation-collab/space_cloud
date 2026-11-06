@@ -144,6 +144,12 @@ def run_delete_site(deployment_job: str | None = None, job_name: str | None = No
 			job.save(ignore_permissions=True)
 			frappe.db.commit()
 			bench_client.drop_site(job.server, site.domain)
+		try:
+			bench_client.remove_route(job.server, site.domain)
+		except bench_client.BenchError as e:
+			job.reload()
+			job.output = (job.output or "") + f"\nWARN route removal: {e}"
+			job.save(ignore_permissions=True)
 
 		site.reload()
 		site.status = "Deleted"

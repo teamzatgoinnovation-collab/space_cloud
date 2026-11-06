@@ -253,6 +253,15 @@ def provision_ssl(server_name: str | None, domain: str) -> dict[str, Any]:
 		raise BenchError(str(e)) from e
 
 
+def remove_route(server_name: str | None, domain: str) -> dict[str, Any]:
+	"""Best-effort removal of the tenant's proxy route (no-op on hosts using host nginx)."""
+	server = get_server(server_name)
+	try:
+		return agent_client.remove_route(server, _assert_site(domain))
+	except agent_client.AgentError as e:
+		raise BenchError(str(e)) from e
+
+
 def complete_setup(
 	server_name: str | None,
 	site: str,

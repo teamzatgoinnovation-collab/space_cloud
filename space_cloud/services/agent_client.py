@@ -83,7 +83,7 @@ def call(
     return result
 
 
-def provision_ssl(server, domain: str, *, timeout_s: float = 90) -> dict[str, Any]:
+def provision_ssl(server, domain: str, *, timeout_s: float = 90, path: str = "/ssl") -> dict[str, Any]:
     """POST /ssl on `server`'s Space Agent — writes the vhost, obtains a
     Let's Encrypt cert via certbot certonly --webroot, reloads nginx.
     Separate from call()/exec since /ssl needs real host nginx access that
@@ -100,7 +100,7 @@ def provision_ssl(server, domain: str, *, timeout_s: float = 90) -> dict[str, An
 
     body = json.dumps({"domain": domain}).encode()
     req = urllib.request.Request(
-        f"{endpoint}/ssl",
+        f"{endpoint}{path}",
         data=body,
         method="POST",
         headers={
@@ -136,3 +136,8 @@ def ping(server) -> bool:
             return json.loads(res.read()).get("ok", False)
     except Exception:
         return False
+
+
+def remove_route(server, domain: str) -> dict[str, Any]:
+	"""POST /unroute — drop the per-tenant route when its site is deleted."""
+	return provision_ssl(server, domain, timeout_s=30, path="/unroute")
