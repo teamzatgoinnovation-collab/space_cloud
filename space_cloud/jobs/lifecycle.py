@@ -96,10 +96,10 @@ def _run_simple(job_name: str, *, maintenance: bool, final_status: str):
 		job.save(ignore_permissions=True)
 		frappe.db.commit()
 		log_activity(f"Site {final_status}", "Space Site", site.name)
-		if final_status == "Suspended":
+		if final_status in ("Suspended", "Active"):
 			notifications.notify(
-				title=f"Site suspended: {site.name}",
-				event_type="site_suspended",
+				title=f"Site {'suspended' if final_status == 'Suspended' else 'resumed'}: {site.name}",
+				event_type="site_suspended" if final_status == "Suspended" else "site_resumed",
 				message=site.domain or site.name,
 				customer=site.customer,
 				ref_doctype="Space Site",

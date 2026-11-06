@@ -529,6 +529,20 @@ def change_site_plan(site: str, plan: str):
 		frappe.get_doc("Space Subscription", site_doc.subscription).change_plan(plan)
 	audit.log_audit("change_site_plan", ref_doctype="Space Site", ref_name=site, details=f"{old_plan} -> {plan}")
 	frappe.db.commit()
+	if old_plan != plan:
+		try:
+			from space.services import notifications
+
+			notifications.notify(
+				title=f"Plan changed: {site}",
+				event_type="plan_changed",
+				message=f"{site_doc.domain or site}: {old_plan} -> {plan}",
+				customer=site_doc.customer,
+				ref_doctype="Space Site",
+				ref_name=site,
+			)
+		except Exception:
+			frappe.log_error(title="Space plan-change notification failed")
 	return ok({"site": site, "plan": plan})
 
 
