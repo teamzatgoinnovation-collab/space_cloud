@@ -9,7 +9,6 @@ next to the data. A site that cannot answer returns None -- the caller must trea
 
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -42,9 +41,12 @@ def push_state(site: str, payload: dict[str, Any]) -> bool:
 	if _protected(row.domain):
 		payload["enforcement_on"] = 0
 	domain = bench_client._assert_site(row.domain)
+	# `bench set-config --parse` evaluates a PYTHON literal (ast.literal_eval), not JSON: JSON's null / true / false
+	# make it fail with "malformed node" (found in production on the first real push). repr() of a dict of
+	# str / int / None round-trips through literal_eval.
 	bench_client.run_on_bench(
 		row.server,
-		["bench", "--site", domain, "set-config", "zg_subscription", json.dumps(payload, separators=(",", ":")), "--parse"],
+		["bench", "--site", domain, "set-config", "zg_subscription", repr(payload), "--parse"],
 		timeout_s=60,
 	)
 	return True

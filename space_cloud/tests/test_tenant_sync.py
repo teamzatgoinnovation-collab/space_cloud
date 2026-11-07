@@ -3,6 +3,7 @@ this pins the exact commands (they were verified once against a real bench) and 
 
 from __future__ import annotations
 
+import ast
 import json
 import unittest
 from datetime import datetime
@@ -26,20 +27,22 @@ class TestPush(unittest.TestCase):
 			ok = tenant_sync.push_state("acme", payload)
 		return ok, calls
 
-	def test_pushes_compact_json_with_parse_flag_and_no_shell(self):
-		ok, calls = self._push(_row(), {"enforcement_on": 1, "status": "TRIAL", "trial_ends_at": "2026-12-06T12:00:00+00:00"})
+	def test_the_value_is_a_python_literal_that_bench_parse_accepts_null_included(self):
+		"""`bench set-config --parse` runs ast.literal_eval: JSON null/true/false would fail (it did, in production)."""
+		payload = {"enforcement_on": 1, "status": "TRIAL", "trial_ends_at": None, "paid_until": None, "grace_days": 3,
+			"site_url": "https://acme.zatgoinnovation.com", "portal_url": None, "synced_at": "2026-11-07T00:31:34+00:00"}
+		ok, calls = self._push(_row(), payload)
 		self.assertTrue(ok)
 		server, argv = calls[0]
 		self.assertEqual(server, "srv1")
 		self.assertEqual(argv[:5], ["bench", "--site", "acme.zatgoinnovation.com", "set-config", "zg_subscription"])
 		self.assertEqual(argv[-1], "--parse")
-		self.assertEqual(json.loads(argv[5])["status"], "TRIAL")
-		self.assertNotIn(" ", argv[5].replace('"trial_ends_at":"2026-12-06T12:00:00+00:00"', ""))  # compact separators
+		self.assertEqual(ast.literal_eval(argv[5]), payload)  # exactly what the tenant will read, nulls and all
 
 	def test_protected_sites_are_always_told_enforcement_off(self):
 		ok, calls = self._push(_row(), {"enforcement_on": 1, "status": "EXPIRED"}, protected=True)
 		self.assertTrue(ok)
-		self.assertEqual(json.loads(calls[0][1][5])["enforcement_on"], 0)
+		self.assertEqual(ast.literal_eval(calls[0][1][5])["enforcement_on"], 0)
 
 	def test_sites_that_are_not_live_are_never_touched(self):
 		for status in ("Draft", "Provisioning", "Failed", "Deleted"):
@@ -57,7 +60,7 @@ class TestPush(unittest.TestCase):
 		ok, calls = self._push(_row(), {"enforcement_on": 1, "status": 'TR"IAL; echo hi'})
 		argv = calls[0][1]
 		self.assertEqual(len(argv), 7)  # bench --site X set-config KEY VALUE --parse
-		self.assertEqual(json.loads(argv[5])["status"], 'TR"IAL; echo hi')
+		self.assertEqual(ast.literal_eval(argv[5])["status"], 'TR"IAL; echo hi')
 
 
 class TestReadActivity(unittest.TestCase):
