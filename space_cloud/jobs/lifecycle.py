@@ -10,7 +10,7 @@ from space.services import notifications
 from space.utils.activity import log_activity
 
 
-def _enqueue(site_name: str, job_type: str, method: str) -> dict:
+def _enqueue(site_name: str, job_type: str, method: str, **job_kwargs) -> dict:
 	site = frappe.get_doc("Space Site", site_name)
 	job = frappe.get_doc(
 		{
@@ -33,6 +33,7 @@ def _enqueue(site_name: str, job_type: str, method: str) -> dict:
 		timeout=3600,
 		job_id=f"space-{job_type.lower()}-{site.name}-{job.name}",
 		deployment_job=job.name,
+		**job_kwargs,
 	)
 	log_activity(f"{job_type} enqueued", "Space Site", site.name, job.name)
 	return {"ok": True, "job": job.name}
@@ -52,37 +53,31 @@ def enqueue_resume_site(site_name: str) -> dict:
 	return _enqueue(site_name, "Resume", "space_cloud.jobs.lifecycle.run_resume_site")
 
 
-def guard_deletable(site, source: str = "user") -> None:
-	"""Refuse to delete what must never be deleted. Applies to every route (customer button, admin, scheduler):
-	the portal's own site and protected domains first, then -- for the inactivity scheduler -- that the
-	subscription really is scheduled, was warned, and is not held or excluded."""
+def guard_deletable(site, source: str = "user", expected_scheduled_at=None) -> None:
+	"""Refuse to delete what must never be deleted. Applies to every route (customer button, admin, scheduler) and
+	is called twice: when the deletion is queued and again the instant the job runs (a payment, a login, a hold or an
+	exclusion can arrive in between). The portal's own site and protected domains are never deletable; a deletion
+	driven by the scheduler (`inactivity`, `admin_schedule`) must additionally still be scheduled for the SAME date,
+	unheld, unexcluded, (automatic) unpaid, for the same customer who was warned, with the warning confirmed
+	delivered."""
 	from space.services import lifecycle as lc
 
 	domain = (site.domain or "").lower()
 	if not domain or domain in lc.protected_domains():
-		frappe.throw(f"{site.name} is a protected site and cannot be deleted")
-	if source != "inactivity":
-		return
-	sub = site.subscription
-	if not sub:
-		frappe.throw("No subscription: refusing automatic deletion")
-	row = frappe.db.get_value(
-		"Space Subscription", sub, ["lifecycle_status", "deletion_hold", "paid_until"], as_dict=True
-	)
-	if row.lifecycle_status != lc.DELETION_SCHEDULED:
-		frappe.throw("Subscription is not scheduled for deletion")
-	if row.deletion_hold or lc.is_excluded(site.name) or lc.is_excluded(domain):
-		frappe.throw("Site is held or excluded from automatic deletion")
-	if lc.is_paid(row.paid_until):
-		frappe.throw("Subscription is paid: refusing automatic deletion")
+		raise lc.DeletionRefused(f"{site.name} is a protected site and cannot be deleted")
+	if source in ("inactivity", "admin_schedule"):
+		lc.assert_scheduled_deletion_valid(site, source, expected_scheduled_at)
 
 
-def enqueue_delete_site(site_name: str, source: str = "user") -> dict:
+def enqueue_delete_site(site_name: str, source: str = "user", expected_scheduled_at: str | None = None) -> dict:
 	site = frappe.get_doc("Space Site", site_name)
 	if site.status == "Deleted":
 		frappe.throw("Site already deleted")
-	guard_deletable(site, source)
-	return _enqueue(site_name, "Delete", "space_cloud.jobs.lifecycle.run_delete_site")
+	guard_deletable(site, source, expected_scheduled_at)
+	return _enqueue(
+		site_name, "Delete", "space_cloud.jobs.lifecycle.run_delete_site",
+		source=source, expected_scheduled_at=expected_scheduled_at,
+	)
 
 
 def run_suspend_site(deployment_job: str | None = None, job_name: str | None = None):
@@ -156,28 +151,41 @@ def _stage(site, name: str) -> None:
 	from space.services import lifecycle as lc
 
 	lc.record_event("deletion_stage", subscription=site.subscription, site=site.name, details={"stage": name})
-	frappe.db.commit()
+	lc.commit()
 
 
 def _cleanup_metadata(site) -> None:
 	"""Provisioning metadata of THIS site only: domains and backup records (their files went with the site folder)."""
+	from space.services import lifecycle as lc
+
 	frappe.db.set_value("Space Backup", {"site": site.name}, "status", "Deleted")
 	frappe.db.delete("Space Domain", {"site": site.name})
-	frappe.db.commit()
+	lc.commit()
 
 
 def _mark_subscription_deleted(site) -> None:
+	"""The subscription becomes DELETED -- from ANY state (a customer or admin can delete a site whatever its
+	lifecycle state) -- unless another live site still shares it. A failure is recorded, never swallowed silently."""
 	from space.services import lifecycle as lc
 
-	if site.subscription and frappe.db.get_value("Space Subscription", site.subscription, "lifecycle_status"):
-		try:
-			lc.transition(site.subscription, lc.DELETED, reason="site deleted", push=False)
-			lc.record_event("deletion_completed", subscription=site.subscription, site=site.name)
-		except Exception:
-			frappe.log_error(title=f"Space lifecycle: could not mark {site.name} deleted")
+	sub = site.subscription
+	if not sub or not frappe.db.get_value("Space Subscription", sub, "lifecycle_status"):
+		return
+	if frappe.db.exists("Space Site", {"subscription": sub, "name": ("!=", site.name), "status": ("!=", "Deleted")}):
+		return  # another live site uses this subscription
+	try:
+		lc.transition(sub, lc.DELETED, reason="site deleted", push=False)
+		lc.record_event("deletion_completed", subscription=sub, site=site.name)
+	except Exception:
+		frappe.log_error(title=f"Space lifecycle: could not mark {site.name} deleted")
+		lc.record_event("deletion_failed", subscription=sub, site=site.name, details={"reason": "subscription could not be marked DELETED"})
 
 
-def run_delete_site(deployment_job: str | None = None, job_name: str | None = None):
+def run_delete_site(
+	deployment_job: str | None = None, job_name: str | None = None, source: str = "user", expected_scheduled_at: str | None = None,
+):
+	from space.services import lifecycle as lc
+
 	job_name = deployment_job or job_name
 	if not job_name:
 		frappe.throw("deployment_job is required")
@@ -188,15 +196,17 @@ def run_delete_site(deployment_job: str | None = None, job_name: str | None = No
 		job.started_at = now_datetime()
 		job.progress = 10
 		job.save(ignore_permissions=True)
-		frappe.db.commit()
+		lc.commit()
 
-		guard_deletable(site, "user")  # protected domains again, at run time (settings may have changed since enqueue)
+		# The same guards again, at the instant the job runs: it may have waited in the queue behind other jobs, and a
+		# payment, a login, a hold or an exclusion may have arrived meanwhile. A refusal is not an error: the site stays.
+		guard_deletable(site, source, expected_scheduled_at)
 		_stage(site, "guards_passed")
 		if site.domain in bench_client.list_sites(job.server):
 			job.progress = 40
 			job.output = f"Dropping {site.domain}"
 			job.save(ignore_permissions=True)
-			frappe.db.commit()
+			lc.commit()
 			bench_client.drop_site(job.server, site.domain)
 			_stage(site, "dropped")
 		if site.domain in bench_client.list_sites(job.server):
@@ -229,7 +239,7 @@ def run_delete_site(deployment_job: str | None = None, job_name: str | None = No
 		job.can_cancel = 0
 		job.output = (job.output or "") + "\nDeleted"
 		job.save(ignore_permissions=True)
-		frappe.db.commit()
+		lc.commit()
 		log_activity("Site deleted", "Space Site", site.name)
 		notifications.notify(
 			title=f"Site deleted: {site.name}",
@@ -239,6 +249,20 @@ def run_delete_site(deployment_job: str | None = None, job_name: str | None = No
 			ref_doctype="Space Site",
 			ref_name=site.name,
 		)
+	except lc.DeletionRefused as exc:
+		job.reload()
+		job.status = "Failed"
+		job.error_log = f"Deletion not run: {exc}"
+		job.output = (job.output or "") + f"\nNOT DELETED: {exc}"
+		job.finished_at = now_datetime()
+		job.can_retry = 0
+		job.can_cancel = 0
+		job.save(ignore_permissions=True)
+		lc.commit()
+		lc.record_event("deletion_failed", subscription=site.subscription, site=site.name,
+			details={"reason": str(exc), "stage": "re-check before running", "source": source})
+		lc.commit()
+		return
 	except Exception as e:
 		job.reload()
 		job.status = "Failed"
@@ -247,7 +271,7 @@ def run_delete_site(deployment_job: str | None = None, job_name: str | None = No
 		job.can_retry = 1
 		job.can_cancel = 0
 		job.save(ignore_permissions=True)
-		frappe.db.commit()
+		lc.commit()
 		notifications.notify(
 			title=f"Deployment failed: {site.name}",
 			event_type="deployment_failed",
